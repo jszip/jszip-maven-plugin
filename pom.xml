@@ -18,9 +18,9 @@
   <modelVersion>4.0.0</modelVersion>
 
   <parent>
-    <groupId>org.sonatype.oss</groupId>
-    <artifactId>oss-parent</artifactId>
-    <version>7</version>
+    <groupId>org.jszip</groupId>
+    <artifactId>jszip-parent</artifactId>
+    <version>1</version>
   </parent>
 
   <groupId>org.jszip.maven</groupId>
@@ -31,27 +31,9 @@
   <name>JavaScript Zip Maven Plugin</name>
   <description>A plugin for managing JavaScript Zip archives.</description>
   <url>http://jszip.org/jszip-maven-plugin</url>
-  <inceptionYear>2012</inceptionYear>
-  <licenses>
-    <license>
-      <name>The Apache Software License, Version 2.0</name>
-      <url>http://www.apache.org/licenses/LICENSE-2.0.txt</url>
-      <distribution>repo</distribution>
-    </license>
-  </licenses>
   <prerequisites>
     <maven>2.2.1</maven>
   </prerequisites>
-
-  <developers>
-    <developer>
-      <id>stephenc</id>
-      <name>Stephen Connolly</name>
-      <roles>
-        <role>Developer</role>
-      </roles>
-    </developer>
-  </developers>
 
   <scm>
     <connection>scm:git:git://github.com/jszip/jszip-maven-plugin.git</connection>
@@ -62,12 +44,14 @@
     <system>github</system>
     <url>http://github.com/jszip/jszip-maven-plugin/issues</url>
   </issueManagement>
+  <distributionManagement>
+    <site>
+      <id>github.com</id>
+      <url>gitsite:git@github.com/jszip/jszip.github.com.git/jszip-maven-plugin</url>
+    </site>
+  </distributionManagement>
 
   <properties>
-    <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
-    <project.build.outputEncoding>UTF-8</project.build.outputEncoding>
-    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-    <mavenVersion>2.2.1</mavenVersion>
     <mavenArchiverVersion>2.5</mavenArchiverVersion>
     <mavenFilteringVersion>1.0</mavenFilteringVersion>
     <mavenVersion>2.2.1</mavenVersion>
@@ -198,28 +182,8 @@
     <pluginManagement>
       <plugins>
         <plugin>
-          <artifactId>maven-clean-plugin</artifactId>
-          <version>2.4.1</version>
-        </plugin>
-        <plugin>
-          <artifactId>maven-compiler-plugin</artifactId>
-          <version>2.3.2</version>
-        </plugin>
-        <plugin>
-          <artifactId>maven-deploy-plugin</artifactId>
-          <version>2.7</version>
-        </plugin>
-        <plugin>
-          <artifactId>maven-gpg-plugin</artifactId>
-          <version>1.4</version>
-        </plugin>
-        <plugin>
-          <artifactId>maven-install-plugin</artifactId>
-          <version>2.3.1</version>
-        </plugin>
-        <plugin>
-          <artifactId>maven-jar-plugin</artifactId>
-          <version>2.3.2</version>
+          <artifactId>maven-invoker-plugin</artifactId>
+          <version>1.5</version>
         </plugin>
         <plugin>
           <artifactId>maven-plugin-plugin</artifactId>
@@ -234,36 +198,72 @@
           </executions>
         </plugin>
         <plugin>
-          <artifactId>maven-release-plugin</artifactId>
-          <version>2.2.2</version>
-        </plugin>
-        <plugin>
-          <artifactId>maven-resources-plugin</artifactId>
-          <version>2.5</version>
-        </plugin>
-        <plugin>
-          <artifactId>maven-site-plugin</artifactId>
-          <version>3.0</version>
-        </plugin>
-        <plugin>
-          <artifactId>maven-surefire-plugin</artifactId>
-          <version>2.11</version>
+          <groupId>org.codehaus.mojo</groupId>
+          <artifactId>mrm-maven-plugin</artifactId>
+          <version>1.0-alpha-1</version>
+          <configuration>
+            <propertyName>repository.proxy.url</propertyName>
+          </configuration>
         </plugin>
       </plugins>
     </pluginManagement>
     <plugins>
       <plugin>
-        <artifactId>maven-compiler-plugin</artifactId>
+        <artifactId>maven-site-plugin</artifactId>
         <configuration>
-          <source>1.5</source>
-          <target>1.5</target>
-          <compilerArgument>-g</compilerArgument>
+          <reportPlugins combine.children="append">
+            <plugin>
+              <groupId>org.apache.maven.plugins</groupId>
+              <artifactId>maven-project-info-reports-plugin</artifactId>
+              <configuration>
+                <dependencyDetailsEnabled>false</dependencyDetailsEnabled>
+                <dependencyLocationsEnabled>false</dependencyLocationsEnabled>
+              </configuration>
+              <reports>
+                <report>dependencies</report>
+                <report>issue-tracking</report>
+                <report>mailing-list</report>
+                <report>license</report>
+                <report>project-team</report>
+                <report>summary</report>
+                <report>scm</report>
+              </reports>
+            </plugin>
+            <plugin>
+              <groupId>org.apache.maven.plugins</groupId>
+              <artifactId>maven-javadoc-plugin</artifactId>
+              <configuration>
+                <!-- keep only errors and warnings -->
+                <quiet>true</quiet>
+                <linksource>true</linksource>
+                <links>
+                  <link>http://java.sun.com/javase/6/docs/api/</link>
+                </links>
+              </configuration>
+            </plugin>
+            <plugin>
+              <groupId>org.apache.maven.plugins</groupId>
+              <artifactId>maven-jxr-plugin</artifactId>
+              <configuration>
+                <aggregate>false</aggregate>
+              </configuration>
+            </plugin>
+            <plugin>
+              <groupId>org.apache.maven.plugins</groupId>
+              <artifactId>maven-surefire-report-plugin</artifactId>
+            </plugin>
+            <plugin>
+              <artifactId>maven-plugin-plugin</artifactId>
+              <reports>
+                <report>report</report>
+              </reports>
+            </plugin>
+          </reportPlugins>
         </configuration>
       </plugin>
       <plugin>
         <groupId>org.codehaus.mojo</groupId>
         <artifactId>mrm-maven-plugin</artifactId>
-        <version>1.0-alpha-1</version>
         <executions>
           <execution>
             <goals>
@@ -272,9 +272,6 @@
             </goals>
           </execution>
         </executions>
-        <configuration>
-          <propertyName>repository.proxy.url</propertyName>
-        </configuration>
       </plugin>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>

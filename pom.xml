@@ -1,5 +1,4 @@
 <?xml version="1.0" encoding="utf-8"?>
-
 <!--
    Copyright 2011-2012 Stephen Connolly.
 
@@ -15,7 +14,6 @@
    See the License for the specific language governing permissions and
    limitations under the License.
 -->
-
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
   <modelVersion>4.0.0</modelVersion>
 
@@ -25,14 +23,14 @@
     <version>7</version>
   </parent>
 
-  <groupId>com.github.stephenc.javascript</groupId>
+  <groupId>org.jszip.maven</groupId>
   <artifactId>jszip-maven-plugin</artifactId>
   <version>0.1-SNAPSHOT</version>
   <packaging>maven-plugin</packaging>
 
   <name>JavaScript Zip Maven Plugin</name>
   <description>A plugin for managing JavaScript Zip archives.</description>
-  <url>http://stephenc.github.com/jszip-maven-plugin</url>
+  <url>http://jszip.org/jszip-maven-plugin</url>
   <inceptionYear>2012</inceptionYear>
   <licenses>
     <license>
@@ -56,13 +54,13 @@
   </developers>
 
   <scm>
-    <connection>scm:git:git://github.com/stephenc/jszip-maven-plugin.git</connection>
-    <developerConnection>scm:git:git@github.com:stephenc/jszip-maven-plugin.git</developerConnection>
-    <url>http://github.com/stephenc/jszip-maven-plugin/tree/master/</url>
+    <connection>scm:git:git://github.com/jszip/jszip-maven-plugin.git</connection>
+    <developerConnection>scm:git:git@github.com:jszip/jszip-maven-plugin.git</developerConnection>
+    <url>http://github.com/jszip/jszip-maven-plugin/tree/master/</url>
   </scm>
   <issueManagement>
     <system>github</system>
-    <url>http://github.com/stephenc/jszip-maven-plugin/issues</url>
+    <url>http://github.com/jszip/jszip-maven-plugin/issues</url>
   </issueManagement>
 
   <properties>

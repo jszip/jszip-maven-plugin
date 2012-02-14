@@ -43,7 +43,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.URL;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -166,7 +165,7 @@ public class JSZipMojo extends AbstractMojo {
                         "META-INF/maven/" + groupId + "/" + artifactId + "/pom.properties",
                         zipArchiver.getOverrideFileMode());
             }
-            zipArchiver.addResource(new PackageInfoJsonResource(project), "package-info.json",
+            zipArchiver.addResource(new PackageJsonResource(project), "package.json",
                     zipArchiver.getOverrideFileMode());
             if (contentDirectory.isDirectory()) {
                 zipArchiver.addDirectory(contentDirectory);
@@ -180,11 +179,11 @@ public class JSZipMojo extends AbstractMojo {
 
     }
 
-    private static class PackageInfoJsonResource extends AbstractPlexusIoResource {
+    private static class PackageJsonResource extends AbstractPlexusIoResource {
         private final byte[] bytes;
         private final long lastModified;
 
-        public PackageInfoJsonResource(MavenProject project) throws IOException, MojoExecutionException {
+        public PackageJsonResource(MavenProject project) throws IOException, MojoExecutionException {
             this.lastModified = project.getFile().lastModified();
             Map<String, Object> p = new TreeMap<String, Object>();
             p.put("name", project.getGroupId() + "." + project.getArtifactId());

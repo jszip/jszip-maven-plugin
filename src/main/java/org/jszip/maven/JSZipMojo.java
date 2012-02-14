@@ -16,13 +16,25 @@
 
 package org.jszip.maven;
 
+import org.apache.maven.artifact.Artifact;
+import org.apache.maven.model.Contributor;
+import org.apache.maven.model.Developer;
+import org.apache.maven.model.License;
 import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugin.MojoFailureException;
 import org.apache.maven.project.MavenProject;
+import org.apache.maven.shared.artifact.filter.collection.ArtifactFilterException;
+import org.apache.maven.shared.artifact.filter.collection.FilterArtifacts;
+import org.apache.maven.shared.artifact.filter.collection.ProjectTransitivityFilter;
+import org.apache.maven.shared.artifact.filter.collection.ScopeFilter;
+import org.apache.maven.shared.artifact.filter.collection.TypeFilter;
+import org.codehaus.jackson.map.ObjectMapper;
+import org.codehaus.jackson.map.SerializationConfig;
 import org.codehaus.plexus.archiver.zip.ZipArchiver;
 import org.codehaus.plexus.components.io.resources.AbstractPlexusIoResource;
 import org.codehaus.plexus.util.IOUtil;
+import org.codehaus.plexus.util.StringUtils;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -30,11 +42,19 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URL;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.Properties;
+import java.util.Set;
+import java.util.TreeMap;
 
 /**
  * @phase package
  * @goal jszip
+ * @requiresDependencyResolution runtime
  */
 public class JSZipMojo extends AbstractMojo {
 
@@ -146,6 +166,8 @@ public class JSZipMojo extends AbstractMojo {
                         "META-INF/maven/" + groupId + "/" + artifactId + "/pom.properties",
                         zipArchiver.getOverrideFileMode());
             }
+            zipArchiver.addResource(new PackageInfoJsonResource(project), "package-info.json",
+                    zipArchiver.getOverrideFileMode());
             if (contentDirectory.isDirectory()) {
                 zipArchiver.addDirectory(contentDirectory);
             }
@@ -156,6 +178,131 @@ public class JSZipMojo extends AbstractMojo {
             throw new MojoExecutionException("Error assembling ZIP", e);
         }
 
+    }
+
+    private static class PackageInfoJsonResource extends AbstractPlexusIoResource {
+        private final byte[] bytes;
+        private final long lastModified;
+
+        public PackageInfoJsonResource(MavenProject project) throws IOException, MojoExecutionException {
+            this.lastModified = project.getFile().lastModified();
+            Map<String, Object> p = new TreeMap<String, Object>();
+            p.put("name", project.getGroupId() + "." + project.getArtifactId());
+            p.put("version", project.getVersion());
+            addFirstNotEmpty(p, "description", project.getDescription());
+            addFirstNotEmpty(p, "homepage", project.getUrl());
+            if (project.getDevelopers() != null && !project.getDevelopers().isEmpty()) {
+                List<Object> devs = new ArrayList<Object>();
+                for (Developer d : (List<Developer>) project.getDevelopers()) {
+                    Map<String, Object> dev = new TreeMap<String, Object>();
+                    addFirstNotEmpty(dev, "name", d.getName(), d.getId(), d.getEmail());
+                    addFirstNotEmpty(dev, "email", d.getEmail());
+                    addFirstNotEmpty(dev, "web", d.getUrl());
+                    if (dev.containsKey("name")) {
+                        devs.add(dev);
+                    }
+                }
+                p.put("maintainers", devs);
+            }
+            if (project.getContributors() != null && !project.getContributors().isEmpty()) {
+                List<Object> contribs = new ArrayList<Object>();
+                for (Contributor c : (List<Contributor>) project.getContributors()) {
+                    Map<String, Object> contrib = new TreeMap<String, Object>();
+                    addFirstNotEmpty(contrib, "name", c.getName(), c.getEmail());
+                    addFirstNotEmpty(contrib, "email", c.getEmail());
+                    addFirstNotEmpty(contrib, "web", c.getUrl());
+                    if (contrib.containsKey("name")) {
+                        contribs.add(contrib);
+                    }
+                }
+                p.put("contributors", contribs);
+            }
+            if (project.getIssueManagement() != null) {
+                addFirstNotEmpty(p, "bugs", project.getIssueManagement().getUrl());
+            }
+            if (project.getLicenses() != null && !project.getLicenses().isEmpty()) {
+                List<Object> licenses = new ArrayList<Object>();
+                for (License l : (List<License>) project.getLicenses()) {
+                    Map<String, Object> license = new TreeMap<String, Object>();
+                    addFirstNotEmpty(license, "type", l.getName());
+                    addFirstNotEmpty(license, "url", l.getUrl());
+                    licenses.add(license);
+                }
+                p.put("licenses", licenses);
+
+            }
+            FilterArtifacts filter = new FilterArtifacts();
+    
+            filter.addFilter(new ProjectTransitivityFilter(project.getDependencyArtifacts(), true));
+    
+            filter.addFilter(new ScopeFilter("runtime", ""));
+    
+            filter.addFilter(new TypeFilter("jszip", ""));
+    
+            // start with all artifacts.
+            Set<Artifact> artifacts = project.getArtifacts();
+    
+            // perform filtering
+            try {
+                artifacts = filter.filter(artifacts);
+            } catch (ArtifactFilterException e) {
+                throw new MojoExecutionException(e.getMessage(), e);
+            }
+
+            Map<String,String> dependencies = new LinkedHashMap<String, String>();
+            for (Artifact artifact : artifacts) {
+                dependencies.put(artifact.getGroupId() + "." + artifact.getArtifactId(), artifact.getVersion());
+            }
+            p.put("dependencies", dependencies);
+    
+            ByteArrayOutputStream os = new ByteArrayOutputStream();
+            try {
+                ObjectMapper m = new ObjectMapper();
+                m.setSerializationConfig(m.getSerializationConfig().with(SerializationConfig.Feature.INDENT_OUTPUT));
+                m.writeValue(os, p);
+            } finally {
+                IOUtil.close(os);
+            }
+            bytes = os.toByteArray();
+
+        }
+
+        private void addFirstNotEmpty(Map<String, Object> map, String name, String... values) {
+            for (String value : values) {
+                if (StringUtils.isNotEmpty(value)) {
+                    map.put(name, value);
+                    return;
+                }
+            }
+        }
+
+        @Override
+        public boolean isFile() {
+            return true;
+        }
+
+        @Override
+        public boolean isExisting() {
+            return true;
+        }
+
+        @Override
+        public long getLastModified() {
+            return lastModified;
+        }
+
+        @Override
+        public long getSize() {
+            return bytes.length;
+        }
+
+        public URL getURL() throws IOException {
+            return null;
+        }
+
+        public InputStream getContents() throws IOException {
+            return new ByteArrayInputStream(bytes);
+        }
     }
 
     private static class PomPropertiesResource extends AbstractPlexusIoResource {
@@ -177,7 +324,6 @@ public class JSZipMojo extends AbstractMojo {
             ByteArrayOutputStream os = new ByteArrayOutputStream();
             try {
                 p.store(os, GENERATED_BY_MAVEN);
-                os.close();
             } finally {
                 IOUtil.close(os);
             }

@@ -61,8 +61,7 @@ public class UnpackMojo extends AbstractMojo {
     /**
      * The Zip unarchiver.
      *
-     * @parameter expression="${component.org.codehaus.plexus.archiver.UnArchiver#zip}"
-     * @required
+     * @component role="org.codehaus.plexus.archiver.UnArchiver" roleHint="zip"
      */
     private ZipUnArchiver zipUnArchiver;
 

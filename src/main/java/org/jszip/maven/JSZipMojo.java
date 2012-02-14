@@ -82,8 +82,7 @@ public class JSZipMojo extends AbstractMojo {
     /**
      * The Jar archiver.
      *
-     * @parameter expression="${component.org.codehaus.plexus.archiver.Archiver#zip}"
-     * @required
+     * @component role="org.codehaus.plexus.archiver.Archiver" roleHint="zip"
      */
     private ZipArchiver zipArchiver;
 

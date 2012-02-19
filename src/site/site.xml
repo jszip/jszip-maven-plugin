@@ -27,6 +27,8 @@
     <menu ref="reports" inherit="bottom" />
   </body>
 
+  <googleAnalyticsAccountId>UA-25185795-2</googleAnalyticsAccountId>
+
   <custom>
     <fluidoSkin>
       <gitHub>

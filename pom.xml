@@ -146,6 +146,14 @@
       <artifactId>maven-archiver</artifactId>
       <version>${mavenArchiverVersion}</version>
     </dependency>
+    <!-- FIXME: I'm specifying a dependency on plexus-container-default
+                I thought I didn't need to
+    -->
+    <dependency>
+      <groupId>org.codehaus.plexus</groupId>
+      <artifactId>plexus-container-default</artifactId>
+      <version>1.0-alpha-9-stable-1</version>
+    </dependency>
     <dependency>
       <groupId>org.codehaus.plexus</groupId>
       <artifactId>plexus-utils</artifactId>

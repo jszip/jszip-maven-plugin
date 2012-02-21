@@ -59,7 +59,8 @@ import java.util.Set;
 
 /**
  * @goal run
- * @requiresDependencyResolution runtime
+ * @execute phase="test-compile"
+ * @requiresDependencyResolution compile+runtime
  */
 public class RunMojo extends AbstractMojo {
     /**
@@ -163,6 +164,7 @@ public class RunMojo extends AbstractMojo {
         }
         MavenProject project = this.project;
         long lastPomChange = getPomsLastModified();
+        getLog().info("Servlet container started. Will restart if changes to poms detected.");
         while (true) {
             long pomsLastModified = getPomsLastModified();
             if (lastPomChange == pomsLastModified) {
@@ -249,9 +251,7 @@ public class RunMojo extends AbstractMojo {
         }
     }
 
-    private List<MavenProject> buildReactorProjects()
-            throws ProjectBuildingException, CycleDetectedException, DuplicateProjectException,
-            MissingProjectException {
+    private List<MavenProject> buildReactorProjects() throws Exception {
         List<MavenProject> projects = new ArrayList<MavenProject>();
         DefaultProfileManager profileManager = new DefaultProfileManager(session.getContainer(),
                 session.getExecutionProperties());

@@ -37,7 +37,6 @@ import org.apache.maven.profiles.DefaultProfileManager;
 import org.apache.maven.project.DuplicateProjectException;
 import org.apache.maven.project.MavenProject;
 import org.apache.maven.project.MavenProjectBuilder;
-import org.apache.maven.project.MissingProjectException;
 import org.apache.maven.project.ProjectBuildingException;
 import org.apache.maven.project.ProjectSorter;
 import org.apache.maven.shared.artifact.filter.collection.ArtifactFilterException;
@@ -47,8 +46,22 @@ import org.apache.maven.shared.artifact.filter.collection.ScopeFilter;
 import org.apache.maven.shared.artifact.filter.collection.TypeFilter;
 import org.codehaus.plexus.util.StringUtils;
 import org.codehaus.plexus.util.dag.CycleDetectedException;
+import org.eclipse.jetty.server.Connector;
+import org.eclipse.jetty.server.Handler;
+import org.eclipse.jetty.server.Server;
+import org.eclipse.jetty.server.handler.ContextHandlerCollection;
+import org.eclipse.jetty.server.handler.DefaultHandler;
+import org.eclipse.jetty.server.handler.HandlerCollection;
+import org.eclipse.jetty.server.nio.SelectChannelConnector;
+import org.eclipse.jetty.util.resource.Resource;
+import org.eclipse.jetty.util.resource.ResourceCollection;
+import org.eclipse.jetty.webapp.WebAppClassLoader;
+import org.eclipse.jetty.webapp.WebAppContext;
 
+import java.io.File;
+import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
+import java.net.MalformedURLException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -56,6 +69,8 @@ import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
+import java.util.Stack;
+import java.util.concurrent.TimeUnit;
 
 /**
  * @goal run
@@ -63,6 +78,62 @@ import java.util.Set;
  * @requiresDependencyResolution compile+runtime
  */
 public class RunMojo extends AbstractMojo {
+    /**
+     * If true, the &lt;testOutputDirectory&gt;
+     * and the dependencies of &lt;scope&gt;test&lt;scope&gt;
+     * will be put first on the runtime classpath.
+     *
+     * @parameter alias="useTestClasspath" default-value="false"
+     */
+    private boolean useTestScope;
+
+
+    /**
+     * The default location of the web.xml file. Will be used
+     * if &lt;webApp&gt;&lt;descriptor&gt; is not set.
+     *
+     * @parameter expression="${maven.war.webxml}"
+     * @readonly
+     */
+    private String webXml;
+
+
+    /**
+     * The directory containing generated classes.
+     *
+     * @parameter expression="${project.build.outputDirectory}"
+     * @required
+     */
+    private File classesDirectory;
+
+
+    /**
+     * The directory containing generated test classes.
+     *
+     * @parameter expression="${project.build.testOutputDirectory}"
+     * @required
+     */
+    private File testClassesDirectory;
+
+    /**
+     * Root directory for all html/jsp etc files
+     *
+     * @parameter expression="${maven.war.src}"
+     */
+    private File webAppSourceDirectory;
+
+
+    /**
+     * List of connectors to use. If none are configured
+     * then the default is a single SelectChannelConnector at port 8080. You can
+     * override this default port number by using the system property jetty.port
+     * on the command line, eg:  mvn -Djetty.port=9999 jetty:run. Consider using instead
+     * the &lt;jettyXml&gt; element to specify external jetty xml config file.
+     *
+     * @parameter
+     */
+    protected Connector[] connectors;
+
     /**
      * The module that the goal should apply to. Specify either groupId:artifactId or just plain artifactId.
      *
@@ -144,6 +215,7 @@ public class RunMojo extends AbstractMojo {
     private Object projectDependenciesResolver;
 
     private final String scope = "test";
+    private final long classpathCheckInterval = TimeUnit.SECONDS.toMillis(10);
 
     public void execute()
             throws MojoExecutionException, MojoFailureException {
@@ -163,91 +235,250 @@ public class RunMojo extends AbstractMojo {
             return;
         }
         MavenProject project = this.project;
+        long lastClassChange = System.currentTimeMillis();
         long lastPomChange = getPomsLastModified();
-        getLog().info("Servlet container started. Will restart if changes to poms detected.");
-        while (true) {
-            long pomsLastModified = getPomsLastModified();
-            if (lastPomChange == pomsLastModified) {
-                try {
-                    Thread.sleep(500);
-                } catch (InterruptedException e) {
-                    getLog().debug("Interrupted", e);
-                }
-            } else {
 
-                getLog().info("Change in poms detected, re-parsing to evaluate impact...");
-                lastPomChange = pomsLastModified; // we will now process this change, so from now on don't re-process
-                // even if we have issues processing
-
-                List<MavenProject> newReactorProjects;
-                try {
-                    newReactorProjects = buildReactorProjects();
-                } catch (ProjectBuildingException e) {
-                    getLog().error(e.getLocalizedMessage());
-                    getLog().info("Re-parse aborted due to malformed pom.xml file(s)");
-                    continue;
-                } catch (CycleDetectedException e) {
-                    getLog().error(e.getLocalizedMessage());
-                    getLog().info("Re-parse aborted due to dependency cycle in project model");
-                    continue;
-                } catch (DuplicateProjectException e) {
-                    getLog().error(e.getLocalizedMessage());
-                    getLog().info("Re-parse aborted due to duplicate projects in project model");
-                    continue;
-                } catch (Exception e) {
-                    getLog().error(e.getLocalizedMessage());
-                    getLog().info("Re-parse aborted due a problem that prevented sorting the project model");
-                    continue;
-                }
-                if (!buildPlanEqual(newReactorProjects, this.reactorProjects)) {
-                    throw new BuildPlanModifiedException("A pom.xml change has impacted the build plan.");
-                }
-                MavenProject newProject = findProject(newReactorProjects, this.project);
-                if (newProject == null) {
-                    throw new BuildPlanModifiedException(
-                            "A pom.xml change appears to have removed " + this.project.getId()
-                                    + " from the build plan.");
-                }
-
-                newProject.setArtifacts(resolve(newProject, "runtime"));
-
-                getLog().info("Comparing effective classpath of new and old models");
-                boolean classPathChanged;
-                try {
-                    classPathChanged = classpathsEqual(project, newProject, scope);
-                } catch (DependencyResolutionRequiredException e) {
-                    getLog().error(e.getLocalizedMessage());
-                    getLog().info("Re-parse aborted due to dependency resolution problems");
-                    continue;
-                }
-                if (classPathChanged) {
-                    getLog().info("Effective classpath of " + project.getId() + " has changed.");
+        Server server = new Server();
+        if (connectors == null || connectors.length == 0) {
+            SelectChannelConnector selectChannelConnector = new SelectChannelConnector();
+            selectChannelConnector.setPort(8080);
+            connectors = new Connector[]{
+                    selectChannelConnector
+            };
+        }
+        server.setConnectors(connectors);
+        ContextHandlerCollection contexts = new ContextHandlerCollection();
+        HandlerCollection handlerCollection = new HandlerCollection(true);
+        DefaultHandler defaultHandler = new DefaultHandler();
+        handlerCollection.setHandlers(new Handler[]{contexts, defaultHandler});
+        server.setHandler(handlerCollection);
+        try {
+            server.start();
+        } catch (Exception e) {
+            throw new MojoExecutionException(e.getMessage(), e);
+        }
+        List<MavenProject> reactorProjects = this.reactorProjects;
+        String[] resourcesList;
+        WebAppContext webAppContext;
+        Resource webXml;
+        try {
+            List<Resource> resources = new ArrayList<Resource>();
+            for (Artifact a : getOverlayArtifacts(project, scope)) {
+                MavenProject fromReactor = findProject(reactorProjects, a);
+                if (fromReactor != null) {
+                    File jsDir = new File(fromReactor.getBasedir(), "src/main/js");
+                    if (jsDir.isDirectory()) {
+                        resources.add(Resource.newResource(jsDir));
+                    }
+                    File resDir = new File(fromReactor.getBasedir(), "src/main/resources");
+                    if (resDir.isDirectory()) {
+                        resources.add(Resource.newResource(resDir));
+                    }
                 } else {
-                    getLog().info("Effective classpath is unchanged.");
+                    resources.add(Resource.newResource("jar:" + a.getFile().toURI().toURL() + "!/"));
+                }
+            }
+            if (webAppSourceDirectory == null) {
+                webAppSourceDirectory = new File(project.getBasedir(), "src/main/webapp");
+            }
+            if (webAppSourceDirectory.isDirectory()) {
+                resources.add(Resource.newResource(webAppSourceDirectory));
+            }
+            Collections.reverse(resources);
+            final ResourceCollection resourceCollection =
+                    new ResourceCollection(resources.toArray(new Resource[resources.size()]));
+            resourcesList = resourceCollection.list();
+
+            webAppContext = new WebAppContext();
+            webAppContext.setWar(webAppSourceDirectory.getAbsolutePath());
+            webAppContext.setBaseResource(resourceCollection);
+
+            WebAppClassLoader classLoader = new WebAppClassLoader(webAppContext);
+            for (String s : getClasspathElements(project, scope)) {
+                classLoader.addClassPath(s);
+            }
+            webAppContext.setClassLoader(classLoader);
+
+            contexts.setHandlers(new Handler[]{webAppContext});
+            contexts.start();
+            webAppContext.start();
+            Resource webInf = webAppContext.getWebInf();
+            webXml = webInf != null ? webInf.getResource("web.xml") : null;
+        } catch (ArtifactFilterException e) {
+            throw new MojoExecutionException(e.getMessage(), e);
+        } catch (MalformedURLException e) {
+            throw new MojoExecutionException(e.getMessage(), e);
+        } catch (IOException e) {
+            throw new MojoExecutionException(e.getMessage(), e);
+        } catch (Exception e) {
+            throw new MojoExecutionException(e.getMessage(), e);
+        }
+
+        long webXmlLastModified = webXml == null ? 0L : webXml.lastModified();
+        try {
+
+            getLog().info("Context started. Will restart if changes to poms detected.");
+            long nextClasspathCheck = System.currentTimeMillis() + classpathCheckInterval;
+            while (true) {
+                long pomsLastModified = getPomsLastModified();
+                boolean pomsChanged = lastPomChange < pomsLastModified;
+                boolean overlaysChanged = false;
+                boolean classPathChanged = webXmlLastModified < (webXml == null ? 0L : webXml.lastModified());
+                if (nextClasspathCheck < System.currentTimeMillis()) {
+                    long classChange = classpathLastModified(project);
+                    if (classChange > lastClassChange) {
+                        classPathChanged = true;
+                        lastClassChange = classChange;
+                    }
+                    nextClasspathCheck = System.currentTimeMillis() + classpathCheckInterval;
+                }
+                if (!classPathChanged && !overlaysChanged && !pomsChanged) {
+                    try {
+                        Thread.sleep(500);
+                    } catch (InterruptedException e) {
+                        getLog().debug("Interrupted", e);
+                    }
+                    continue;
+                }
+                if (pomsChanged) {
+                    getLog().info("Change in poms detected, re-parsing to evaluate impact...");
+                    lastPomChange = pomsLastModified; // we will now process this change, so from now on don't re-process
+                    // even if we have issues processing
+                    List<MavenProject> newReactorProjects;
+                    try {
+                        newReactorProjects = buildReactorProjects();
+                    } catch (ProjectBuildingException e) {
+                        getLog().error(e.getLocalizedMessage());
+                        getLog().info("Re-parse aborted due to malformed pom.xml file(s)");
+                        continue;
+                    } catch (CycleDetectedException e) {
+                        getLog().error(e.getLocalizedMessage());
+                        getLog().info("Re-parse aborted due to dependency cycle in project model");
+                        continue;
+                    } catch (DuplicateProjectException e) {
+                        getLog().error(e.getLocalizedMessage());
+                        getLog().info("Re-parse aborted due to duplicate projects in project model");
+                        continue;
+                    } catch (Exception e) {
+                        getLog().error(e.getLocalizedMessage());
+                        getLog().info("Re-parse aborted due a problem that prevented sorting the project model");
+                        continue;
+                    }
+                    if (!buildPlanEqual(newReactorProjects, this.reactorProjects)) {
+                        throw new BuildPlanModifiedException("A pom.xml change has impacted the build plan.");
+                    }
+                    MavenProject newProject = findProject(newReactorProjects, this.project);
+                    if (newProject == null) {
+                        throw new BuildPlanModifiedException(
+                                "A pom.xml change appears to have removed " + this.project.getId()
+                                        + " from the build plan.");
+                    }
+
+                    newProject.setArtifacts(resolve(newProject, "runtime"));
+
+                    getLog().info("Comparing effective classpath of new and old models");
+                    try {
+                        classPathChanged = classPathChanged || classpathsEqual(project, newProject, scope);
+                    } catch (DependencyResolutionRequiredException e) {
+                        getLog().error(e.getLocalizedMessage());
+                        getLog().info("Re-parse aborted due to dependency resolution problems");
+                        continue;
+                    }
+                    if (!classPathChanged) {
+                        if (classPathChanged) {
+                            getLog().info("Effective classpath of " + project.getId() + " has changed.");
+                        } else {
+                            getLog().info("Effective classpath is unchanged.");
+                        }
+                    }
+
+                    getLog().debug("Comparing effective overlays of new and old models");
+                    try {
+                        overlaysChanged = overlaysEqual(project, newProject);
+                    } catch (OverConstrainedVersionException e) {
+                        getLog().error(e.getLocalizedMessage());
+                        getLog().info("Re-parse aborted due to dependency resolution problems");
+                        continue;
+                    } catch (ArtifactFilterException e) {
+                        getLog().error(e.getLocalizedMessage());
+                        getLog().info("Re-parse aborted due to overlay resolution problems");
+                        continue;
+                    }
+
+                    project = newProject;
+                    reactorProjects = newReactorProjects;
                 }
 
-                getLog().debug("Comparing effective overlays of new and old models");
-                boolean overlaysChanged;
+                if (!overlaysChanged && !classPathChanged) {
+                    continue;
+                }
+                getLog().info("Restarting context to take account of changes...");
                 try {
-                    overlaysChanged = overlaysEqual(project, newProject);
-                } catch (OverConstrainedVersionException e) {
-                    getLog().error(e.getLocalizedMessage());
-                    getLog().info("Re-parse aborted due to dependency resolution problems");
-                    continue;
-                } catch (ArtifactFilterException e) {
-                    getLog().error(e.getLocalizedMessage());
-                    getLog().info("Re-parse aborted due to overlay resolution problems");
-                    continue;
-                }
-                if (overlaysChanged || classPathChanged) {
-                    getLog().info("Restarting servlet container to take account of changes...");
+                    webAppContext.stop();
+                } catch (Exception e) {
+                    throw new MojoExecutionException(e.getMessage(), e);
                 }
 
-                getLog().info("");
+                if (classPathChanged) {
+                    getLog().info("Updating classpath...");
+                    try {
+                        WebAppClassLoader classLoader = new WebAppClassLoader(webAppContext);
+                        for (String s : getClasspathElements(project, scope)) {
+                            classLoader.addClassPath(s);
+                        }
+                        webAppContext.setClassLoader(classLoader);
+                    } catch (Exception e) {
+                        throw new MojoExecutionException(e.getMessage(), e);
+                    }
+                }
 
-                project = newProject;
+                if (overlaysChanged) {
+                    getLog().info("Updating overlays...");
+                    try {
+                        List<Resource> resources = new ArrayList<Resource>();
+                        for (Artifact a : getOverlayArtifacts(project, scope)) {
+                            MavenProject fromReactor = findProject(reactorProjects, a);
+                            if (fromReactor != null) {
+                                File jsDir = new File(fromReactor.getBasedir(), "src/main/js");
+                                if (jsDir.isDirectory()) {
+                                    resources.add(Resource.newResource(jsDir));
+                                }
+                                File resDir = new File(fromReactor.getBasedir(), "src/main/resources");
+                                if (resDir.isDirectory()) {
+                                    resources.add(Resource.newResource(resDir));
+                                }
+                            } else {
+                                resources.add(Resource.newResource("jar:" + a.getFile().toURI().toURL() + "!/"));
+                            }
+                        }
+                        if (webAppSourceDirectory.isDirectory()) {
+                            resources.add(Resource.newResource(webAppSourceDirectory));
+                        }
+                        Collections.reverse(resources);
+                        final ResourceCollection resourceCollection =
+                                new ResourceCollection(resources.toArray(new Resource[resources.size()]));
+                        resourcesList = resourceCollection.list();
+
+                        webAppContext.setBaseResource(resourceCollection);
+                    } catch (Exception e) {
+                        throw new MojoExecutionException(e.getMessage(), e);
+                    }
+                }
+                try {
+                    webAppContext.start();
+                } catch (Exception e) {
+                    throw new MojoExecutionException(e.getMessage(), e);
+                }
+                webXmlLastModified = webXml == null ? 0L : webXml.lastModified();
+                getLog().info("Context restarted.");
             }
 
+        } finally {
+            try {
+                server.stop();
+            } catch (Exception e) {
+                throw new MojoExecutionException(e.getMessage(), e);
+            }
         }
     }
 
@@ -259,6 +490,37 @@ public class RunMojo extends AbstractMojo {
             projects.add(projectBuilder.build(p.getFile(), localRepository, profileManager));
         }
         return new ProjectSorter(projects).getSortedProjects();
+    }
+
+    private long classpathLastModified(MavenProject project) {
+        long result = Long.MIN_VALUE;
+        try {
+            for (String element : getClasspathElements(project, scope)) {
+                File elementFile = new File(element);
+                if (elementFile.exists()) {
+                    result = Math.max(elementFile.lastModified(), result);
+                    if (elementFile.isDirectory()) {
+                        Stack<Iterator<File>> stack = new Stack<Iterator<File>>();
+                        stack.push(Arrays.asList(elementFile.listFiles()).iterator());
+                        while (!stack.empty()) {
+                            Iterator<File> i = stack.pop();
+                            while (i.hasNext()) {
+                                File file = i.next();
+                                result = Math.max(file.lastModified(), result);
+                                if (file.isDirectory()) {
+                                    stack.push(i);
+                                    i = Arrays.asList(file.listFiles()).iterator();
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (DependencyResolutionRequiredException e) {
+            // ignore
+        }
+        return result;
+
     }
 
     private boolean classpathsEqual(MavenProject oldProject, MavenProject newProject, String scope)
@@ -291,8 +553,21 @@ public class RunMojo extends AbstractMojo {
         return null;
     }
 
+    private MavenProject findProject(List<MavenProject> projects, Artifact artifact) {
+        for (MavenProject project : projects) {
+            if (StringUtils.equals(artifact.getGroupId(), project.getGroupId())
+                    && StringUtils.equals(artifact.getArtifactId(), project.getArtifactId())
+                    && StringUtils.equals(artifact.getVersion(), project.getVersion())) {
+                return project;
+            }
+        }
+        return null;
+    }
+
     private boolean buildPlanEqual(List<MavenProject> newPlan, List<MavenProject> oldPlan) {
-        if (newPlan.size() != oldPlan.size()) return false;
+        if (newPlan.size() != oldPlan.size()) {
+            return false;
+        }
         int seq = 0;
         for (Iterator<MavenProject> i = newPlan.iterator(), j = oldPlan.iterator(); i.hasNext() && j.hasNext(); ) {
             MavenProject left = i.next();

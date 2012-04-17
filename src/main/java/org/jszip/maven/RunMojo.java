@@ -19,25 +19,20 @@ package org.jszip.maven;
 import org.apache.maven.artifact.Artifact;
 import org.apache.maven.artifact.ArtifactUtils;
 import org.apache.maven.artifact.DependencyResolutionRequiredException;
-import org.apache.maven.artifact.factory.ArtifactFactory;
-import org.apache.maven.artifact.metadata.ArtifactMetadataSource;
 import org.apache.maven.artifact.repository.ArtifactRepository;
-import org.apache.maven.artifact.resolver.ArtifactNotFoundException;
-import org.apache.maven.artifact.resolver.ArtifactResolutionException;
-import org.apache.maven.artifact.resolver.ArtifactResolutionResult;
-import org.apache.maven.artifact.resolver.ArtifactResolver;
-import org.apache.maven.artifact.resolver.MultipleArtifactsNotFoundException;
-import org.apache.maven.artifact.resolver.filter.ScopeArtifactFilter;
 import org.apache.maven.artifact.versioning.OverConstrainedVersionException;
 import org.apache.maven.execution.MavenSession;
+import org.apache.maven.model.building.ModelBuildingRequest;
 import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugin.MojoFailureException;
 import org.apache.maven.profiles.DefaultProfileManager;
+import org.apache.maven.project.DefaultProjectBuildingRequest;
 import org.apache.maven.project.DuplicateProjectException;
 import org.apache.maven.project.MavenProject;
-import org.apache.maven.project.MavenProjectBuilder;
+import org.apache.maven.project.ProjectBuilder;
 import org.apache.maven.project.ProjectBuildingException;
+import org.apache.maven.project.ProjectBuildingRequest;
 import org.apache.maven.project.ProjectSorter;
 import org.apache.maven.shared.artifact.filter.collection.ArtifactFilterException;
 import org.apache.maven.shared.artifact.filter.collection.FilterArtifacts;
@@ -153,7 +148,7 @@ public class RunMojo extends AbstractMojo {
      * @component
      * @required
      */
-    private MavenProjectBuilder projectBuilder;
+    private ProjectBuilder projectBuilder;
 
     /**
      * @parameter expression="${reactorProjects}"
@@ -161,18 +156,6 @@ public class RunMojo extends AbstractMojo {
      * @readonly
      */
     protected List<MavenProject> reactorProjects;
-
-    /**
-     * @component
-     * @required
-     */
-    protected ArtifactResolver artifactResolver;
-
-    /**
-     * @component
-     * @required
-     */
-    protected ArtifactFactory artifactFactory;
 
     /**
      * Location of the local repository.
@@ -200,12 +183,6 @@ public class RunMojo extends AbstractMojo {
      * @readonly
      */
     protected MavenProject project;
-
-    /**
-     * @component
-     * @required
-     */
-    private ArtifactMetadataSource metadataSource;
 
     /**
      * Used to resolve transitive dependencies in Maven 3.
@@ -342,25 +319,27 @@ public class RunMojo extends AbstractMojo {
                 }
                 if (pomsChanged) {
                     getLog().info("Change in poms detected, re-parsing to evaluate impact...");
-                    lastPomChange = pomsLastModified; // we will now process this change, so from now on don't re-process
+                    // we will now process this change,
+                    // so from now on don't re-process
                     // even if we have issues processing
+                    lastPomChange = pomsLastModified;
                     List<MavenProject> newReactorProjects;
                     try {
                         newReactorProjects = buildReactorProjects();
                     } catch (ProjectBuildingException e) {
-                        getLog().error(e.getLocalizedMessage());
+                        getLog().error(e.getLocalizedMessage(), e);
                         getLog().info("Re-parse aborted due to malformed pom.xml file(s)");
                         continue;
                     } catch (CycleDetectedException e) {
-                        getLog().error(e.getLocalizedMessage());
+                        getLog().error(e.getLocalizedMessage(), e);
                         getLog().info("Re-parse aborted due to dependency cycle in project model");
                         continue;
                     } catch (DuplicateProjectException e) {
-                        getLog().error(e.getLocalizedMessage());
+                        getLog().error(e.getLocalizedMessage(), e);
                         getLog().info("Re-parse aborted due to duplicate projects in project model");
                         continue;
                     } catch (Exception e) {
-                        getLog().error(e.getLocalizedMessage());
+                        getLog().error(e.getLocalizedMessage(), e);
                         getLog().info("Re-parse aborted due a problem that prevented sorting the project model");
                         continue;
                     }
@@ -380,7 +359,7 @@ public class RunMojo extends AbstractMojo {
                     try {
                         classPathChanged = classPathChanged || classpathsEqual(project, newProject, scope);
                     } catch (DependencyResolutionRequiredException e) {
-                        getLog().error(e.getLocalizedMessage());
+                        getLog().error(e.getLocalizedMessage(), e);
                         getLog().info("Re-parse aborted due to dependency resolution problems");
                         continue;
                     }
@@ -396,11 +375,11 @@ public class RunMojo extends AbstractMojo {
                     try {
                         overlaysChanged = overlaysEqual(project, newProject);
                     } catch (OverConstrainedVersionException e) {
-                        getLog().error(e.getLocalizedMessage());
+                        getLog().error(e.getLocalizedMessage(), e);
                         getLog().info("Re-parse aborted due to dependency resolution problems");
                         continue;
                     } catch (ArtifactFilterException e) {
-                        getLog().error(e.getLocalizedMessage());
+                        getLog().error(e.getLocalizedMessage(), e);
                         getLog().info("Re-parse aborted due to overlay resolution problems");
                         continue;
                     }
@@ -483,11 +462,26 @@ public class RunMojo extends AbstractMojo {
     }
 
     private List<MavenProject> buildReactorProjects() throws Exception {
+
         List<MavenProject> projects = new ArrayList<MavenProject>();
-        DefaultProfileManager profileManager = new DefaultProfileManager(session.getContainer(),
-                session.getExecutionProperties());
         for (MavenProject p : reactorProjects) {
-            projects.add(projectBuilder.build(p.getFile(), localRepository, profileManager));
+            ProjectBuildingRequest request = new DefaultProjectBuildingRequest();
+
+            request.setProcessPlugins(true);
+            request.setProfiles(request.getProfiles());
+            request.setActiveProfileIds(session.getRequest().getActiveProfiles());
+            request.setInactiveProfileIds(session.getRequest().getInactiveProfiles());
+            request.setRemoteRepositories(session.getRequest().getRemoteRepositories());
+            request.setSystemProperties(session.getSystemProperties());
+            request.setUserProperties(session.getUserProperties());
+            request.setRemoteRepositories(session.getRequest().getRemoteRepositories());
+            request.setPluginArtifactRepositories(session.getRequest().getPluginArtifactRepositories());
+            request.setRepositorySession(session.getRepositorySession());
+            request.setLocalRepository(localRepository);
+            request.setBuildStartTime(session.getRequest().getStartTime());
+            request.setResolveDependencies(true);
+            request.setValidationLevel(ModelBuildingRequest.VALIDATION_LEVEL_STRICT);
+            projects.add(projectBuilder.build(p.getFile(), request).getProject());
         }
         return new ProjectSorter(projects).getSortedProjects();
     }
@@ -672,43 +666,16 @@ public class RunMojo extends AbstractMojo {
     @SuppressWarnings("unchecked")
     private Set<Artifact> resolve(MavenProject newProject, String scope)
             throws MojoExecutionException {
-        if (projectDependenciesResolver == null) {
-            getLog().debug("Using Maven 2 strategy to resolve project dependencies");
-            Set<Artifact> resolvedArtifacts;
-            try {
-                ArtifactResolutionResult result =
-                        artifactResolver.resolveTransitively(newProject.getDependencyArtifacts(),
-                                artifactFactory.createBuildArtifact(newProject.getGroupId(),
-                                        newProject.getArtifactId(),
-                                        newProject.getVersion(), newProject.getPackaging()),
-                                newProject.getManagedVersionMap(),
-                                session.getLocalRepository(),
-                                newProject.getRemoteArtifactRepositories(),
-                                metadataSource,
-                                new ScopeArtifactFilter(scope));
-                resolvedArtifacts = (Set<Artifact>) result.getArtifacts();
-            } catch (MultipleArtifactsNotFoundException me) {
-                throw new MojoExecutionException(me.getMessage(), me);
-            } catch (ArtifactNotFoundException e) {
-                throw new MojoExecutionException(e.getMessage(), e);
-            } catch (ArtifactResolutionException e) {
-                throw new MojoExecutionException(e.getMessage(), e);
-            }
-            return resolvedArtifacts;
-        } else {
-            getLog().debug("Using Maven e strategy to resolve project dependencies");
-
-            try {
-                return (Set<Artifact>) projectDependenciesResolver.getClass()
-                        .getMethod("resolve", MavenProject.class, Collection.class, MavenSession.class)
-                        .invoke(projectDependenciesResolver, newProject, Collections.singletonList(scope), session);
-            } catch (IllegalAccessException e) {
-                throw new MojoExecutionException(e.getMessage(), e);
-            } catch (InvocationTargetException e) {
-                throw new MojoExecutionException(e.getMessage(), e);
-            } catch (NoSuchMethodException e) {
-                throw new MojoExecutionException(e.getMessage(), e);
-            }
+        try {
+            return (Set<Artifact>) projectDependenciesResolver.getClass()
+                    .getMethod("resolve", MavenProject.class, Collection.class, MavenSession.class)
+                    .invoke(projectDependenciesResolver, newProject, Collections.singletonList(scope), session);
+        } catch (IllegalAccessException e) {
+            throw new MojoExecutionException(e.getMessage(), e);
+        } catch (InvocationTargetException e) {
+            throw new MojoExecutionException(e.getMessage(), e);
+        } catch (NoSuchMethodException e) {
+            throw new MojoExecutionException(e.getMessage(), e);
         }
     }
 }

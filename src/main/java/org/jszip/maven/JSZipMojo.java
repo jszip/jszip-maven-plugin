@@ -24,6 +24,7 @@ import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugin.MojoFailureException;
 import org.apache.maven.project.MavenProject;
+import org.apache.maven.project.MavenProjectHelper;
 import org.apache.maven.shared.artifact.filter.collection.ArtifactFilterException;
 import org.apache.maven.shared.artifact.filter.collection.FilterArtifacts;
 import org.apache.maven.shared.artifact.filter.collection.ProjectTransitivityFilter;
@@ -53,7 +54,6 @@ import java.util.TreeMap;
 /**
  * @phase package
  * @goal jszip
- * @requiresDependencyResolution runtime
  */
 public class JSZipMojo extends AbstractMojo {
 
@@ -126,6 +126,14 @@ public class JSZipMojo extends AbstractMojo {
      */
     private boolean addMavenDescriptor;
 
+    /**
+     * Maven ProjectHelper.
+     *
+     * @component
+     * @readonly
+     */
+    private MavenProjectHelper projectHelper;
+
 
     protected File getZipFile(File basedir, String finalName, String classifier) {
         if (classifier == null) {
@@ -171,7 +179,26 @@ public class JSZipMojo extends AbstractMojo {
                 zipArchiver.addDirectory(contentDirectory);
             }
             zipArchiver.createArchive();
-            project.getArtifact().setFile(zipFile);
+
+            if (StringUtils.isEmpty(classifier)) {
+                project.getArtifact().setFile(zipFile);
+                project.getArtifact().setResolved(true);
+            } else {
+                boolean found = false;
+                for (Artifact artifact : (List<Artifact>) project.getAttachedArtifacts()) {
+                    if (StringUtils.equals(artifact.getGroupId(), project.getGroupId())
+                            && StringUtils.equals(artifact.getArtifactId(), project.getArtifactId())
+                            && StringUtils.equals(artifact.getVersion(), project.getVersion())
+                            && StringUtils.equals(artifact.getClassifier(), classifier)
+                            && StringUtils.equals(artifact.getType(), "jszip")) {
+                        artifact.setFile(zipFile);
+                        found = true;
+                    }
+                }
+                if (!found) {
+                    projectHelper.attachArtifact(project, "jszip", classifier, zipFile);
+                }
+            }
 
         } catch (Exception e) {
             throw new MojoExecutionException("Error assembling ZIP", e);

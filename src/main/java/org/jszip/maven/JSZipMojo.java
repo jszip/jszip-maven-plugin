@@ -20,7 +20,6 @@ import org.apache.maven.artifact.Artifact;
 import org.apache.maven.model.Contributor;
 import org.apache.maven.model.Developer;
 import org.apache.maven.model.License;
-import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugin.MojoFailureException;
 import org.apache.maven.project.MavenProject;
@@ -52,20 +51,12 @@ import java.util.Set;
 import java.util.TreeMap;
 
 /**
+ * Produces a JSZip formatted zip file.
+ *
  * @phase package
  * @goal jszip
  */
-public class JSZipMojo extends AbstractMojo {
-
-    /**
-     * The maven project.
-     *
-     * @parameter expression="${project}"
-     * @required
-     * @readonly
-     */
-    private MavenProject project;
-
+public class JSZipMojo extends AbstractJSZipMojo {
 
     /**
      * Directory containing the classes.
@@ -74,6 +65,14 @@ public class JSZipMojo extends AbstractMojo {
      * @required
      */
     private File contentDirectory;
+
+    /**
+     * Directory containing the resources.
+     *
+     * @parameter expression="${project.build.outputDirectory}"
+     * @required
+     */
+    private File resourcesDirectory;
 
     /**
      * Directory containing the generated ZIP.
@@ -134,7 +133,6 @@ public class JSZipMojo extends AbstractMojo {
      */
     private MavenProjectHelper projectHelper;
 
-
     protected File getZipFile(File basedir, String finalName, String classifier) {
         if (classifier == null) {
             classifier = "";
@@ -178,25 +176,27 @@ public class JSZipMojo extends AbstractMojo {
             if (contentDirectory.isDirectory()) {
                 zipArchiver.addDirectory(contentDirectory);
             }
+            if (resourcesDirectory.isDirectory()) {
+                zipArchiver.addDirectory(resourcesDirectory);
+            }
             zipArchiver.createArchive();
 
             if (StringUtils.isEmpty(classifier)) {
                 project.getArtifact().setFile(zipFile);
-                project.getArtifact().setResolved(true);
             } else {
                 boolean found = false;
-                for (Artifact artifact : (List<Artifact>) project.getAttachedArtifacts()) {
+                for (Artifact artifact : project.getAttachedArtifacts()) {
                     if (StringUtils.equals(artifact.getGroupId(), project.getGroupId())
                             && StringUtils.equals(artifact.getArtifactId(), project.getArtifactId())
                             && StringUtils.equals(artifact.getVersion(), project.getVersion())
                             && StringUtils.equals(artifact.getClassifier(), classifier)
-                            && StringUtils.equals(artifact.getType(), "jszip")) {
+                            && StringUtils.equals(artifact.getType(), JSZIP_TYPE)) {
                         artifact.setFile(zipFile);
                         found = true;
                     }
                 }
                 if (!found) {
-                    projectHelper.attachArtifact(project, "jszip", classifier, zipFile);
+                    projectHelper.attachArtifact(project, JSZIP_TYPE, classifier, zipFile);
                 }
             }
 
@@ -258,16 +258,16 @@ public class JSZipMojo extends AbstractMojo {
 
             }
             FilterArtifacts filter = new FilterArtifacts();
-    
+
             filter.addFilter(new ProjectTransitivityFilter(project.getDependencyArtifacts(), true));
-    
+
             filter.addFilter(new ScopeFilter("runtime", ""));
-    
-            filter.addFilter(new TypeFilter("jszip", ""));
-    
+
+            filter.addFilter(new TypeFilter(JSZIP_TYPE, ""));
+
             // start with all artifacts.
             Set<Artifact> artifacts = project.getArtifacts();
-    
+
             // perform filtering
             try {
                 artifacts = filter.filter(artifacts);
@@ -275,12 +275,12 @@ public class JSZipMojo extends AbstractMojo {
                 throw new MojoExecutionException(e.getMessage(), e);
             }
 
-            Map<String,String> dependencies = new LinkedHashMap<String, String>();
+            Map<String, String> dependencies = new LinkedHashMap<String, String>();
             for (Artifact artifact : artifacts) {
                 dependencies.put(artifact.getGroupId() + "." + artifact.getArtifactId(), artifact.getVersion());
             }
             p.put("dependencies", dependencies);
-    
+
             ByteArrayOutputStream os = new ByteArrayOutputStream();
             try {
                 ObjectMapper m = new ObjectMapper();

@@ -35,8 +35,11 @@
       <role-hint>jszip</role-hint>
       <implementation>org.apache.maven.artifact.handler.DefaultArtifactHandler</implementation>
       <configuration>
+        <language>javascript</language>
         <extension>zip</extension>
         <type>jszip</type>
+        <addedToClasspath>false</addedToClasspath>
+        <includesDependencies>false</includesDependencies>
       </configuration>
     </component>
   </components>

@@ -16,20 +16,22 @@
 
 package org.jszip.maven;
 
+import org.apache.maven.ProjectDependenciesResolver;
 import org.apache.maven.artifact.Artifact;
 import org.apache.maven.artifact.ArtifactUtils;
 import org.apache.maven.artifact.DependencyResolutionRequiredException;
 import org.apache.maven.artifact.repository.ArtifactRepository;
+import org.apache.maven.artifact.resolver.ArtifactNotFoundException;
+import org.apache.maven.artifact.resolver.ArtifactResolutionException;
 import org.apache.maven.artifact.versioning.OverConstrainedVersionException;
 import org.apache.maven.execution.MavenSession;
 import org.apache.maven.model.building.ModelBuildingRequest;
-import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugin.MojoFailureException;
-import org.apache.maven.profiles.DefaultProfileManager;
 import org.apache.maven.project.DefaultProjectBuildingRequest;
 import org.apache.maven.project.DuplicateProjectException;
 import org.apache.maven.project.MavenProject;
+import org.apache.maven.project.MavenProjectHelper;
 import org.apache.maven.project.ProjectBuilder;
 import org.apache.maven.project.ProjectBuildingException;
 import org.apache.maven.project.ProjectBuildingRequest;
@@ -55,11 +57,9 @@ import org.eclipse.jetty.webapp.WebAppContext;
 
 import java.io.File;
 import java.io.IOException;
-import java.lang.reflect.InvocationTargetException;
 import java.net.MalformedURLException;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collection;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
@@ -68,11 +68,17 @@ import java.util.Stack;
 import java.util.concurrent.TimeUnit;
 
 /**
+ * Starts a Jetty servlet container with resources resolved from the reactor projects to enable live editing of those
+ * resources and pom and classpath scanning to restart the servlet container when the classpath is modified. Note that
+ * if the poms are modified in such a way that the reactor build plan is modified, we have no choice but to stop the
+ * servlet container and require the maven session to be restarted, but best effort is made to ensure that restart
+ * is only when required.
+ *
  * @goal run
  * @execute phase="test-compile"
  * @requiresDependencyResolution compile+runtime
  */
-public class RunMojo extends AbstractMojo {
+public class RunMojo extends AbstractJSZipMojo {
     /**
      * If true, the &lt;testOutputDirectory&gt;
      * and the dependencies of &lt;scope&gt;test&lt;scope&gt;
@@ -176,20 +182,28 @@ public class RunMojo extends AbstractMojo {
     private MavenSession session;
 
     /**
-     * The maven project.
+     * The forked project.
      *
-     * @parameter expression="${project}"
+     * @parameter expression="${executedProject}"
      * @required
      * @readonly
      */
-    protected MavenProject project;
+    private MavenProject executedProject;
 
     /**
-     * Used to resolve transitive dependencies in Maven 3.
+     * Used to resolve transitive dependencies.
      *
-     * @component role="org.apache.maven.ProjectDependenciesResolver"
+     * @component
      */
-    private Object projectDependenciesResolver;
+    private ProjectDependenciesResolver projectDependenciesResolver;
+
+    /**
+     * Maven ProjectHelper.
+     *
+     * @component
+     * @readonly
+     */
+    private MavenProjectHelper projectHelper;
 
     private final String scope = "test";
     private final long classpathCheckInterval = TimeUnit.SECONDS.toMillis(10);
@@ -199,6 +213,9 @@ public class RunMojo extends AbstractMojo {
         if (runPackages == null || runPackages.length == 0) {
             runPackages = new String[]{"war"};
         }
+
+        injectMissingArtifacts(project, executedProject);
+
         if (!Arrays.asList(runPackages).contains(project.getPackaging())) {
             getLog().info("Skipping JSZip run: module " + ArtifactUtils.versionlessKey(project.getGroupId(),
                     project.getArtifactId()) + " as not specified in runPackages");
@@ -211,6 +228,8 @@ public class RunMojo extends AbstractMojo {
                     project.getArtifactId()) + " as requested runModule is " + runModule);
             return;
         }
+        getLog().info("Starting JSZip run: module " + ArtifactUtils.versionlessKey(project.getGroupId(),
+                project.getArtifactId()));
         MavenProject project = this.project;
         long lastClassChange = System.currentTimeMillis();
         long lastPomChange = getPomsLastModified();
@@ -235,7 +254,6 @@ public class RunMojo extends AbstractMojo {
             throw new MojoExecutionException(e.getMessage(), e);
         }
         List<MavenProject> reactorProjects = this.reactorProjects;
-        String[] resourcesList;
         WebAppContext webAppContext;
         Resource webXml;
         try {
@@ -247,6 +265,7 @@ public class RunMojo extends AbstractMojo {
                     if (jsDir.isDirectory()) {
                         resources.add(Resource.newResource(jsDir));
                     }
+                    // TODO filtering support
                     File resDir = new File(fromReactor.getBasedir(), "src/main/resources");
                     if (resDir.isDirectory()) {
                         resources.add(Resource.newResource(resDir));
@@ -264,7 +283,6 @@ public class RunMojo extends AbstractMojo {
             Collections.reverse(resources);
             final ResourceCollection resourceCollection =
                     new ResourceCollection(resources.toArray(new Resource[resources.size()]));
-            resourcesList = resourceCollection.list();
 
             webAppContext = new WebAppContext();
             webAppContext.setWar(webAppSourceDirectory.getAbsolutePath());
@@ -436,7 +454,6 @@ public class RunMojo extends AbstractMojo {
                         Collections.reverse(resources);
                         final ResourceCollection resourceCollection =
                                 new ResourceCollection(resources.toArray(new Resource[resources.size()]));
-                        resourcesList = resourceCollection.list();
 
                         webAppContext.setBaseResource(resourceCollection);
                     } catch (Exception e) {
@@ -457,6 +474,45 @@ public class RunMojo extends AbstractMojo {
                 server.stop();
             } catch (Exception e) {
                 throw new MojoExecutionException(e.getMessage(), e);
+            }
+        }
+    }
+
+    private void injectMissingArtifacts(MavenProject destination, MavenProject source) {
+        if (destination.getArtifact().getFile() == null && source.getArtifact().getFile() != null) {
+            getLog().info("Pushing primary artifact from forked execution into current execution");
+            destination.getArtifact().setFile(source.getArtifact().getFile());
+        }
+        for (Artifact executedArtifact : source.getAttachedArtifacts()) {
+            String executedArtifactId =
+                    (executedArtifact.getClassifier() == null ? "." : "-" + executedArtifact.getClassifier() + ".")
+                            + executedArtifact.getType();
+            if (StringUtils.equals(executedArtifact.getGroupId(), destination.getGroupId())
+                    && StringUtils.equals(executedArtifact.getArtifactId(), destination.getArtifactId())
+                    && StringUtils.equals(executedArtifact.getVersion(), destination.getVersion())) {
+                boolean found = false;
+                for (Artifact artifact : destination.getAttachedArtifacts()) {
+                    if (StringUtils.equals(artifact.getGroupId(), destination.getGroupId())
+                            && StringUtils.equals(artifact.getArtifactId(), destination.getArtifactId())
+                            && StringUtils.equals(artifact.getVersion(), destination.getVersion())
+                            && StringUtils.equals(artifact.getClassifier(), executedArtifact.getClassifier())
+                            && StringUtils.equals(artifact.getType(), executedArtifact.getType())) {
+                        if (artifact.getFile() == null) {
+                            getLog().info("Pushing " + executedArtifactId
+                                    + " artifact from forked execution into current execution");
+                            artifact.setFile(executedArtifact.getFile());
+                        }
+                        found = true;
+                    }
+                }
+                if (!found) {
+                    getLog().info("Attaching " +
+                            executedArtifactId
+                            + " artifact from forked execution into current execution");
+                    projectHelper
+                            .attachArtifact(destination, executedArtifact.getType(), executedArtifact.getClassifier(),
+                                    executedArtifact.getFile());
+                }
             }
         }
     }
@@ -495,7 +551,7 @@ public class RunMojo extends AbstractMojo {
                     result = Math.max(elementFile.lastModified(), result);
                     if (elementFile.isDirectory()) {
                         Stack<Iterator<File>> stack = new Stack<Iterator<File>>();
-                        stack.push(Arrays.asList(elementFile.listFiles()).iterator());
+                        stack.push(contentsAsList(elementFile).iterator());
                         while (!stack.empty()) {
                             Iterator<File> i = stack.pop();
                             while (i.hasNext()) {
@@ -503,7 +559,7 @@ public class RunMojo extends AbstractMojo {
                                 result = Math.max(file.lastModified(), result);
                                 if (file.isDirectory()) {
                                     stack.push(i);
-                                    i = Arrays.asList(file.listFiles()).iterator();
+                                    i = contentsAsList(file).iterator();
                                 }
                             }
                         }
@@ -515,6 +571,11 @@ public class RunMojo extends AbstractMojo {
         }
         return result;
 
+    }
+
+    private static List<File> contentsAsList(File directory) {
+        File[] files = directory.listFiles();
+        return files == null ? Collections.<File>emptyList() : Arrays.asList(files);
     }
 
     private boolean classpathsEqual(MavenProject oldProject, MavenProject newProject, String scope)
@@ -583,7 +644,7 @@ public class RunMojo extends AbstractMojo {
 
     private boolean overlaysEqual(MavenProject oldProject, MavenProject newProject)
             throws ArtifactFilterException, OverConstrainedVersionException {
-        boolean overlaysChanged = false;
+        boolean overlaysChanged;
         Set<Artifact> newOA = getOverlayArtifacts(newProject, scope);
         Set<Artifact> oldOA = getOverlayArtifacts(oldProject, scope);
         overlaysChanged = newOA.size() != oldOA.size();
@@ -635,7 +696,7 @@ public class RunMojo extends AbstractMojo {
 
         filter.addFilter(new ScopeFilter(scope, ""));
 
-        filter.addFilter(new TypeFilter("jszip", ""));
+        filter.addFilter(new TypeFilter(JSZIP_TYPE, ""));
 
         return filter.filter(project.getArtifacts());
     }
@@ -652,13 +713,13 @@ public class RunMojo extends AbstractMojo {
     private List<String> getClasspathElements(MavenProject project, String scope)
             throws DependencyResolutionRequiredException {
         if ("test".equals(scope)) {
-            return (List<String>) project.getTestClasspathElements();
+            return project.getTestClasspathElements();
         }
         if ("compile".equals(scope)) {
-            return (List<String>) project.getCompileClasspathElements();
+            return project.getCompileClasspathElements();
         }
         if ("runtime".equals(scope)) {
-            return (List<String>) project.getRuntimeClasspathElements();
+            return project.getRuntimeClasspathElements();
         }
         return Collections.emptyList();
     }
@@ -667,14 +728,10 @@ public class RunMojo extends AbstractMojo {
     private Set<Artifact> resolve(MavenProject newProject, String scope)
             throws MojoExecutionException {
         try {
-            return (Set<Artifact>) projectDependenciesResolver.getClass()
-                    .getMethod("resolve", MavenProject.class, Collection.class, MavenSession.class)
-                    .invoke(projectDependenciesResolver, newProject, Collections.singletonList(scope), session);
-        } catch (IllegalAccessException e) {
+            return projectDependenciesResolver.resolve(newProject, Collections.singletonList(scope), session);
+        } catch (ArtifactNotFoundException e) {
             throw new MojoExecutionException(e.getMessage(), e);
-        } catch (InvocationTargetException e) {
-            throw new MojoExecutionException(e.getMessage(), e);
-        } catch (NoSuchMethodException e) {
+        } catch (ArtifactResolutionException e) {
             throw new MojoExecutionException(e.getMessage(), e);
         }
     }

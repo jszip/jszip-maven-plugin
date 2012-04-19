@@ -17,10 +17,9 @@
 package org.jszip.maven;
 
 import org.apache.maven.artifact.Artifact;
-import org.apache.maven.plugin.AbstractMojo;
+import org.apache.maven.artifact.ArtifactUtils;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugin.MojoFailureException;
-import org.apache.maven.project.MavenProject;
 import org.apache.maven.shared.artifact.filter.collection.ArtifactFilterException;
 import org.apache.maven.shared.artifact.filter.collection.FilterArtifacts;
 import org.apache.maven.shared.artifact.filter.collection.ProjectTransitivityFilter;
@@ -35,20 +34,13 @@ import java.io.File;
 import java.util.Set;
 
 /**
+ * Unpacks all the JSZip dependencies into a web application.
+ *
  * @phase generate-resources
  * @goal unpack
- * @requiresDependencyResolution runtime
+ * @requiresDependencyResolution compile+runtime
  */
-public class UnpackMojo extends AbstractMojo {
-
-    /**
-     * The maven project.
-     *
-     * @parameter expression="${project}"
-     * @required
-     * @readonly
-     */
-    private MavenProject project;
+public class UnpackMojo extends AbstractJSZipMojo {
 
     /**
      * The directory where the webapp is built.
@@ -70,13 +62,14 @@ public class UnpackMojo extends AbstractMojo {
      */
     public void execute()
             throws MojoExecutionException, MojoFailureException {
+        getLog().info("Starting unpack into " + webappDirectory);
         FilterArtifacts filter = new FilterArtifacts();
 
         filter.addFilter(new ProjectTransitivityFilter(project.getDependencyArtifacts(), false));
 
         filter.addFilter(new ScopeFilter("runtime", ""));
 
-        filter.addFilter(new TypeFilter("jszip", ""));
+        filter.addFilter(new TypeFilter(JSZIP_TYPE, ""));
 
         // start with all artifacts.
         Set<Artifact> artifacts = project.getArtifacts();
@@ -89,42 +82,51 @@ public class UnpackMojo extends AbstractMojo {
         }
 
         for (Artifact artifact : artifacts) {
+            getLog().info("Unpacking " + ArtifactUtils.key(artifact));
             unpack(artifact.getFile(), webappDirectory, null, null);
         }
-
-        getLog().info("Artifacts = " + artifacts);
-
     }
 
     protected void unpack(File file, File location, String includes, String excludes)
             throws MojoExecutionException {
-        try {
-            location.mkdirs();
-
-            zipUnArchiver.setSourceFile(file);
-
-            zipUnArchiver.setDestDirectory(location);
-
-            if (StringUtils.isNotEmpty(excludes) || StringUtils.isNotEmpty(includes)) {
-                IncludeExcludeFileSelector[] selectors =
-                        new IncludeExcludeFileSelector[]{new IncludeExcludeFileSelector()};
-
-                if (StringUtils.isNotEmpty(excludes)) {
-                    selectors[0].setExcludes(excludes.split(","));
-                }
-
-                if (StringUtils.isNotEmpty(includes)) {
-                    selectors[0].setIncludes(includes.split(","));
-                }
-
-                zipUnArchiver.setFileSelectors(selectors);
+        if (file.isDirectory()) {
+            // TODO handle unpack when the artifact is a directory
+            try {
+                throw new UnsupportedOperationException(
+                        "Have not written the code to handle unpacking from the reactor where the reactor has not "
+                                + "advanced far enough to generate the packed artifact");
+            } catch (UnsupportedOperationException e) {
+                throw new MojoExecutionException("Try running with phase of 'package' or later", e);
             }
+        } else {
+            try {
+                location.mkdirs();
 
-            zipUnArchiver.extract();
-        } catch (ArchiverException e) {
-            e.printStackTrace();
-            throw new MojoExecutionException("Error unpacking file: " + file + " to: " + location + "\r\n"
-                    + e.toString(), e);
+                zipUnArchiver.setSourceFile(file);
+
+                zipUnArchiver.setDestDirectory(location);
+
+                if (StringUtils.isNotEmpty(excludes) || StringUtils.isNotEmpty(includes)) {
+                    IncludeExcludeFileSelector[] selectors =
+                            new IncludeExcludeFileSelector[]{new IncludeExcludeFileSelector()};
+
+                    if (StringUtils.isNotEmpty(excludes)) {
+                        selectors[0].setExcludes(excludes.split(","));
+                    }
+
+                    if (StringUtils.isNotEmpty(includes)) {
+                        selectors[0].setIncludes(includes.split(","));
+                    }
+
+                    zipUnArchiver.setFileSelectors(selectors);
+                }
+
+                zipUnArchiver.extract();
+            } catch (ArchiverException e) {
+                e.printStackTrace();
+                throw new MojoExecutionException("Error unpacking file: " + file + " to: " + location + "\r\n"
+                        + e.toString(), e);
+            }
         }
     }
 

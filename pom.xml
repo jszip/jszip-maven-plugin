@@ -32,7 +32,7 @@
   <description>A plugin for managing JavaScript Zip archives.</description>
   <url>http://jszip.org/jszip-maven-plugin</url>
   <prerequisites>
-    <maven>2.2.1</maven>
+    <maven>3.0.4</maven>
   </prerequisites>
 
   <scm>

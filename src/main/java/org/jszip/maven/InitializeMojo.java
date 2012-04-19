@@ -17,30 +17,20 @@
 package org.jszip.maven;
 
 import org.apache.maven.artifact.Artifact;
-import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugin.MojoFailureException;
-import org.apache.maven.project.MavenProject;
 import org.apache.maven.project.MavenProjectHelper;
 import org.codehaus.plexus.util.StringUtils;
 
 import java.io.File;
-import java.util.List;
 
 /**
+ * Initializes the JSZIP artifact.
+ *
  * @phase compile
  * @goal initialize
  */
-public class InitializeMojo extends AbstractMojo {
-
-    /**
-     * The maven project.
-     *
-     * @parameter expression="${project}"
-     * @required
-     * @readonly
-     */
-    private MavenProject project;
+public class InitializeMojo extends AbstractJSZipMojo {
 
     /**
      * Directory containing the classes.
@@ -68,21 +58,20 @@ public class InitializeMojo extends AbstractMojo {
     /**
      * @see org.apache.maven.plugin.Mojo#execute()
      */
-    public void execute()
-            throws MojoExecutionException, MojoFailureException {
+    public void execute() throws MojoExecutionException, MojoFailureException {
+        // In order to behave like JAR projects, we point to the unpacked files up between the phases
+        // compile and package. Once at the package phase, the packed artifact is used.
+
         if (StringUtils.isEmpty(classifier)) {
-            if (project.getArtifact().getFile() == null) {
-                project.getArtifact().setFile(contentDirectory);
-                project.getArtifact().setResolved(true);
-            }
+            project.getArtifact().setFile(contentDirectory);
         } else {
             boolean found = false;
-            for (Artifact artifact : (List<Artifact>) project.getAttachedArtifacts()) {
+            for (Artifact artifact : project.getAttachedArtifacts()) {
                 if (StringUtils.equals(artifact.getGroupId(), project.getGroupId())
                         && StringUtils.equals(artifact.getArtifactId(), project.getArtifactId())
                         && StringUtils.equals(artifact.getVersion(), project.getVersion())
                         && StringUtils.equals(artifact.getClassifier(), classifier)
-                        && StringUtils.equals(artifact.getType(), "jszip")) {
+                        && StringUtils.equals(artifact.getType(), JSZIP_TYPE)) {
                     if (artifact.getFile() == null) {
                         artifact.setFile(contentDirectory);
                     }
@@ -90,7 +79,7 @@ public class InitializeMojo extends AbstractMojo {
                 }
             }
             if (!found) {
-                projectHelper.attachArtifact(project, "jszip", classifier, contentDirectory);
+                projectHelper.attachArtifact(project, JSZIP_TYPE, classifier, contentDirectory);
             }
         }
     }

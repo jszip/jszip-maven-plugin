@@ -1,8 +1,41 @@
+/*
+ * Copyright 2011-2012 Stephen Connolly.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package org.jszip.maven;
 
+import org.apache.maven.plugin.AbstractMojo;
+import org.apache.maven.project.MavenProject;
+
 /**
- * @author stephenc
- * @since 19/04/2012 09:35
+ * Common base class for all the JSZip goals.
  */
-public class AbstractJSZipMojo {
+public abstract class AbstractJSZipMojo extends AbstractMojo {
+    /**
+     * The type of packaging.
+     */
+    public static final String JSZIP_TYPE = "jszip";
+
+    /**
+     * The maven project.
+     *
+     * @parameter expression="${project}"
+     * @required
+     * @readonly
+     */
+    protected MavenProject project;
+
+
 }

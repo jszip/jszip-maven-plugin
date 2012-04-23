@@ -133,6 +133,14 @@ public class JSZipMojo extends AbstractJSZipMojo {
      */
     private MavenProjectHelper projectHelper;
 
+    public File getContentDirectory() {
+        return contentDirectory;
+    }
+
+    public File getResourcesDirectory() {
+        return resourcesDirectory;
+    }
+
     protected File getZipFile(File basedir, String finalName, String classifier) {
         if (classifier == null) {
             classifier = "";

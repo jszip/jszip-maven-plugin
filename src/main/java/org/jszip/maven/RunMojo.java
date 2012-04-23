@@ -25,9 +25,21 @@ import org.apache.maven.artifact.resolver.ArtifactNotFoundException;
 import org.apache.maven.artifact.resolver.ArtifactResolutionException;
 import org.apache.maven.artifact.versioning.OverConstrainedVersionException;
 import org.apache.maven.execution.MavenSession;
+import org.apache.maven.model.Plugin;
+import org.apache.maven.model.PluginExecution;
 import org.apache.maven.model.building.ModelBuildingRequest;
+import org.apache.maven.plugin.InvalidPluginDescriptorException;
+import org.apache.maven.plugin.MavenPluginManager;
+import org.apache.maven.plugin.Mojo;
+import org.apache.maven.plugin.MojoExecution;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugin.MojoFailureException;
+import org.apache.maven.plugin.PluginConfigurationException;
+import org.apache.maven.plugin.PluginContainerException;
+import org.apache.maven.plugin.PluginDescriptorParsingException;
+import org.apache.maven.plugin.PluginResolutionException;
+import org.apache.maven.plugin.descriptor.MojoDescriptor;
+import org.apache.maven.plugin.descriptor.PluginDescriptor;
 import org.apache.maven.project.DefaultProjectBuildingRequest;
 import org.apache.maven.project.DuplicateProjectException;
 import org.apache.maven.project.MavenProject;
@@ -41,8 +53,11 @@ import org.apache.maven.shared.artifact.filter.collection.FilterArtifacts;
 import org.apache.maven.shared.artifact.filter.collection.ProjectTransitivityFilter;
 import org.apache.maven.shared.artifact.filter.collection.ScopeFilter;
 import org.apache.maven.shared.artifact.filter.collection.TypeFilter;
+import org.codehaus.plexus.configuration.PlexusConfiguration;
 import org.codehaus.plexus.util.StringUtils;
 import org.codehaus.plexus.util.dag.CycleDetectedException;
+import org.codehaus.plexus.util.xml.Xpp3Dom;
+import org.codehaus.plexus.util.xml.Xpp3DomUtils;
 import org.eclipse.jetty.server.Connector;
 import org.eclipse.jetty.server.Handler;
 import org.eclipse.jetty.server.Server;
@@ -54,6 +69,7 @@ import org.eclipse.jetty.util.resource.Resource;
 import org.eclipse.jetty.util.resource.ResourceCollection;
 import org.eclipse.jetty.webapp.WebAppClassLoader;
 import org.eclipse.jetty.webapp.WebAppContext;
+import org.sonatype.aether.repository.RemoteRepository;
 
 import java.io.File;
 import java.io.IOException;
@@ -205,6 +221,42 @@ public class RunMojo extends AbstractJSZipMojo {
      */
     private MavenProjectHelper projectHelper;
 
+    /**
+     * The Maven plugin Manager
+     *
+     * @component
+     * @readonly
+     * @required
+     */
+    private MavenPluginManager mavenPluginManager;
+
+    /**
+     * The current plugin.
+     *
+     * @parameter expression="${plugin.groupId}"
+     * @required
+     * @readonly
+     */
+    private String pluginGroupId;
+
+    /**
+     * The current plugin.
+     *
+     * @parameter expression="${plugin.artifactId}"
+     * @required
+     * @readonly
+     */
+    private String pluginArtifactId;
+
+    /**
+     * The current plugin.
+     *
+     * @parameter expression="${plugin.version}"
+     * @required
+     * @readonly
+     */
+    private String pluginVersion;
+
     private final String scope = "test";
     private final long classpathCheckInterval = TimeUnit.SECONDS.toMillis(10);
 
@@ -256,23 +308,11 @@ public class RunMojo extends AbstractJSZipMojo {
         List<MavenProject> reactorProjects = this.reactorProjects;
         WebAppContext webAppContext;
         Resource webXml;
+        List<Resource> resources;
         try {
-            List<Resource> resources = new ArrayList<Resource>();
+            resources = new ArrayList<Resource>();
             for (Artifact a : getOverlayArtifacts(project, scope)) {
-                MavenProject fromReactor = findProject(reactorProjects, a);
-                if (fromReactor != null) {
-                    File jsDir = new File(fromReactor.getBasedir(), "src/main/js");
-                    if (jsDir.isDirectory()) {
-                        resources.add(Resource.newResource(jsDir));
-                    }
-                    // TODO filtering support
-                    File resDir = new File(fromReactor.getBasedir(), "src/main/resources");
-                    if (resDir.isDirectory()) {
-                        resources.add(Resource.newResource(resDir));
-                    }
-                } else {
-                    resources.add(Resource.newResource("jar:" + a.getFile().toURI().toURL() + "!/"));
-                }
+                addOverlayResources(reactorProjects, resources, a);
             }
             if (webAppSourceDirectory == null) {
                 webAppSourceDirectory = new File(project.getBasedir(), "src/main/webapp");
@@ -281,6 +321,11 @@ public class RunMojo extends AbstractJSZipMojo {
                 resources.add(Resource.newResource(webAppSourceDirectory));
             }
             Collections.reverse(resources);
+            getLog().debug("Overlays:");
+            int index = 0;
+            for (Resource r: resources) {
+                getLog().debug("  [" + index++ + "] = " + r);
+            }
             final ResourceCollection resourceCollection =
                     new ResourceCollection(resources.toArray(new Resource[resources.size()]));
 
@@ -299,6 +344,10 @@ public class RunMojo extends AbstractJSZipMojo {
             webAppContext.start();
             Resource webInf = webAppContext.getWebInf();
             webXml = webInf != null ? webInf.getResource("web.xml") : null;
+        } catch (MojoExecutionException e) {
+            throw e;
+        } catch (MojoFailureException e) {
+            throw e;
         } catch (ArtifactFilterException e) {
             throw new MojoExecutionException(e.getMessage(), e);
         } catch (MalformedURLException e) {
@@ -345,20 +394,16 @@ public class RunMojo extends AbstractJSZipMojo {
                     try {
                         newReactorProjects = buildReactorProjects();
                     } catch (ProjectBuildingException e) {
-                        getLog().error(e.getLocalizedMessage(), e);
-                        getLog().info("Re-parse aborted due to malformed pom.xml file(s)");
+                        getLog().info("Re-parse aborted due to malformed pom.xml file(s)", e);
                         continue;
                     } catch (CycleDetectedException e) {
-                        getLog().error(e.getLocalizedMessage(), e);
-                        getLog().info("Re-parse aborted due to dependency cycle in project model");
+                        getLog().info("Re-parse aborted due to dependency cycle in project model", e);
                         continue;
                     } catch (DuplicateProjectException e) {
-                        getLog().error(e.getLocalizedMessage(), e);
-                        getLog().info("Re-parse aborted due to duplicate projects in project model");
+                        getLog().info("Re-parse aborted due to duplicate projects in project model", e);
                         continue;
                     } catch (Exception e) {
-                        getLog().error(e.getLocalizedMessage(), e);
-                        getLog().info("Re-parse aborted due a problem that prevented sorting the project model");
+                        getLog().info("Re-parse aborted due a problem that prevented sorting the project model", e);
                         continue;
                     }
                     if (!buildPlanEqual(newReactorProjects, this.reactorProjects)) {
@@ -373,32 +418,77 @@ public class RunMojo extends AbstractJSZipMojo {
 
                     newProject.setArtifacts(resolve(newProject, "runtime"));
 
-                    getLog().info("Comparing effective classpath of new and old models");
+                    getLog().debug("Comparing effective classpath of new and old models");
                     try {
                         classPathChanged = classPathChanged || classpathsEqual(project, newProject, scope);
                     } catch (DependencyResolutionRequiredException e) {
-                        getLog().error(e.getLocalizedMessage(), e);
-                        getLog().info("Re-parse aborted due to dependency resolution problems");
+                        getLog().info("Re-parse aborted due to dependency resolution problems", e);
                         continue;
                     }
-                    if (!classPathChanged) {
-                        if (classPathChanged) {
-                            getLog().info("Effective classpath of " + project.getId() + " has changed.");
-                        } else {
-                            getLog().info("Effective classpath is unchanged.");
-                        }
+                    if (classPathChanged) {
+                        getLog().info("Effective classpath of " + project.getId() + " has changed.");
+                    } else {
+                        getLog().debug("Effective classpath is unchanged.");
                     }
 
                     getLog().debug("Comparing effective overlays of new and old models");
                     try {
                         overlaysChanged = overlaysEqual(project, newProject);
                     } catch (OverConstrainedVersionException e) {
-                        getLog().error(e.getLocalizedMessage(), e);
-                        getLog().info("Re-parse aborted due to dependency resolution problems");
+                        getLog().info("Re-parse aborted due to dependency resolution problems", e);
                         continue;
                     } catch (ArtifactFilterException e) {
-                        getLog().error(e.getLocalizedMessage(), e);
-                        getLog().info("Re-parse aborted due to overlay resolution problems");
+                        getLog().info("Re-parse aborted due to overlay resolution problems", e);
+                        continue;
+                    }
+                    if (overlaysChanged) {
+                        getLog().info("Overlay modules of " + project.getId() + " have changed.");
+                    } else {
+                        getLog().debug("Overlay modules are unchanged.");
+                    }
+
+                    getLog().debug("Comparing overlays paths of new and old models");
+                    try {
+                        List<Resource> newResources = new ArrayList<Resource>();
+                        for (Artifact a : getOverlayArtifacts(project, scope)) {
+                            addOverlayResources(newReactorProjects, newResources, a);
+                        }
+                        if (webAppSourceDirectory.isDirectory()) {
+                            newResources.add(Resource.newResource(webAppSourceDirectory));
+                        }
+                        Collections.reverse(newResources);
+                        getLog().debug("New overlays:");
+                        int index = 0;
+                        for (Resource r: newResources) {
+                            getLog().debug("  [" + index++ + "] = " + r);
+                        }
+                        boolean overlayPathsChanged = !resources.equals(newResources);
+                        if (overlayPathsChanged) {
+                            getLog().info("Overlay module paths of " + project.getId() + " have changed.");
+                        } else {
+                            getLog().debug("Overlay module paths are unchanged.");
+                        }
+                        overlaysChanged = overlaysChanged || overlayPathsChanged;
+                    } catch (ArtifactFilterException e) {
+                        getLog().info("Re-parse aborted due to overlay evaluation problems", e);
+                        continue;
+                    } catch (PluginResolutionException e) {
+                        getLog().info("Re-parse aborted due to overlay evaluation problems", e);
+                        continue;
+                    } catch (PluginDescriptorParsingException e) {
+                        getLog().info("Re-parse aborted due to overlay evaluation problems", e);
+                        continue;
+                    } catch (InvalidPluginDescriptorException e) {
+                        getLog().info("Re-parse aborted due to overlay evaluation problems", e);
+                        continue;
+                    } catch (PluginConfigurationException e) {
+                        getLog().info("Re-parse aborted due to overlay evaluation problems", e);
+                        continue;
+                    } catch (PluginContainerException e) {
+                        getLog().info("Re-parse aborted due to overlay evaluation problems", e);
+                        continue;
+                    } catch (IOException e) {
+                        getLog().info("Re-parse aborted due to overlay evaluation problems", e);
                         continue;
                     }
 
@@ -429,32 +519,24 @@ public class RunMojo extends AbstractJSZipMojo {
                     }
                 }
 
-                if (overlaysChanged) {
+                if (overlaysChanged || classPathChanged) {
                     getLog().info("Updating overlays...");
                     try {
-                        List<Resource> resources = new ArrayList<Resource>();
+                        resources = new ArrayList<Resource>();
                         for (Artifact a : getOverlayArtifacts(project, scope)) {
-                            MavenProject fromReactor = findProject(reactorProjects, a);
-                            if (fromReactor != null) {
-                                File jsDir = new File(fromReactor.getBasedir(), "src/main/js");
-                                if (jsDir.isDirectory()) {
-                                    resources.add(Resource.newResource(jsDir));
-                                }
-                                File resDir = new File(fromReactor.getBasedir(), "src/main/resources");
-                                if (resDir.isDirectory()) {
-                                    resources.add(Resource.newResource(resDir));
-                                }
-                            } else {
-                                resources.add(Resource.newResource("jar:" + a.getFile().toURI().toURL() + "!/"));
-                            }
+                            addOverlayResources(reactorProjects, resources, a);
                         }
                         if (webAppSourceDirectory.isDirectory()) {
                             resources.add(Resource.newResource(webAppSourceDirectory));
                         }
                         Collections.reverse(resources);
+                        getLog().debug("Overlays:");
+                        int index = 0;
+                        for (Resource r: resources) {
+                            getLog().debug("  [" + index++ + "] = " + r);
+                        }
                         final ResourceCollection resourceCollection =
                                 new ResourceCollection(resources.toArray(new Resource[resources.size()]));
-
                         webAppContext.setBaseResource(resourceCollection);
                     } catch (Exception e) {
                         throw new MojoExecutionException(e.getMessage(), e);
@@ -476,6 +558,127 @@ public class RunMojo extends AbstractJSZipMojo {
                 throw new MojoExecutionException(e.getMessage(), e);
             }
         }
+    }
+
+    private void addOverlayResources(List<MavenProject> reactorProjects, List<Resource> resources, Artifact a)
+            throws PluginResolutionException, PluginDescriptorParsingException, InvalidPluginDescriptorException,
+            PluginConfigurationException, PluginContainerException, IOException {
+        MavenProject fromReactor = findProject(reactorProjects, a);
+        if (fromReactor != null) {
+            MavenSession session = this.session.clone();
+            session.setCurrentProject(fromReactor);
+            List<RemoteRepository> remoteRepositories =
+                    session.getCurrentProject().getRemotePluginRepositories();
+            Plugin plugin = findThisPluginInProject(fromReactor);
+
+            PluginDescriptor pluginDescriptor = mavenPluginManager
+                    .getPluginDescriptor(plugin, remoteRepositories,
+                            session.getRepositorySession());
+
+            Class<JSZipMojo> mojoClass = JSZipMojo.class;
+            MojoDescriptor jszipDescriptor = findMojoDescriptor(pluginDescriptor, mojoClass);
+
+            for (PluginExecution pluginExecution : plugin.getExecutions()) {
+                if (!pluginExecution.getGoals().contains(jszipDescriptor.getGoal())) {
+                    continue;
+                }
+                MojoExecution mojoExecution =
+                        createMojoExecution(plugin, pluginExecution, jszipDescriptor);
+                JSZipMojo jsZipMojo =
+                        (JSZipMojo) mavenPluginManager
+                                .getConfiguredMojo(Mojo.class, session, mojoExecution);
+                try {
+                    if (jsZipMojo.getContentDirectory().isDirectory()) {
+                        getLog().debug(
+                                "Adding resource directory " + jsZipMojo.getContentDirectory());
+                        resources.add(Resource.newResource(jsZipMojo.getContentDirectory()));
+                    }
+                    // TODO filtering support
+                    if (jsZipMojo.getResourcesDirectory().isDirectory()) {
+                        getLog().debug(
+                                "Adding resource directory " + jsZipMojo.getResourcesDirectory());
+                        resources.add(Resource.newResource(jsZipMojo.getResourcesDirectory()));
+                    }
+                } finally {
+                    mavenPluginManager.releaseMojo(jsZipMojo, mojoExecution);
+                }
+            }
+        } else {
+            resources.add(Resource.newResource("jar:" + a.getFile().toURI().toURL() + "!/"));
+        }
+    }
+
+    private MojoExecution createMojoExecution(Plugin plugin, PluginExecution pluginExecution,
+                                              MojoDescriptor mojoDescriptor) {
+        MojoExecution mojoExecution = new MojoExecution(plugin, mojoDescriptor.getGoal(), pluginExecution.getId());
+        mojoExecution.setConfiguration(convert(mojoDescriptor));
+        if (plugin.getConfiguration() != null || pluginExecution.getConfiguration() != null) {
+            Xpp3Dom pluginConfiguration =
+                    plugin.getConfiguration() == null ? new Xpp3Dom("fake")
+                            : (Xpp3Dom) plugin.getConfiguration();
+
+            Xpp3Dom mergedConfigurationWithExecution =
+                    Xpp3DomUtils.mergeXpp3Dom(
+                            (Xpp3Dom) pluginExecution.getConfiguration(),
+                            pluginConfiguration);
+
+            Xpp3Dom mergedConfiguration =
+                    Xpp3DomUtils.mergeXpp3Dom(mergedConfigurationWithExecution,
+                            convert(mojoDescriptor));
+
+            Xpp3Dom cleanedConfiguration = new Xpp3Dom("configuration");
+            if (mergedConfiguration.getChildren() != null) {
+                for (Xpp3Dom parameter : mergedConfiguration.getChildren()) {
+                    if (mojoDescriptor.getParameterMap().containsKey(parameter.getName())) {
+                        cleanedConfiguration.addChild(parameter);
+                    }
+                }
+            }
+            if (getLog().isDebugEnabled()) {
+                getLog().debug("mojoExecution mergedConfiguration: " + mergedConfiguration);
+                getLog().debug("mojoExecution cleanedConfiguration: " + cleanedConfiguration);
+            }
+
+            mojoExecution.setConfiguration(cleanedConfiguration);
+
+        }
+        mojoExecution.setMojoDescriptor(mojoDescriptor);
+        return mojoExecution;
+    }
+
+    private MojoDescriptor findMojoDescriptor(PluginDescriptor pluginDescriptor, Class<? extends Mojo> mojoClass) {
+        MojoDescriptor mojoDescriptor = null;
+        for (MojoDescriptor d : pluginDescriptor.getMojos()) {
+            if (mojoClass.getName().equals(d.getImplementation())) {
+                mojoDescriptor = pluginDescriptor.getMojo(d.getGoal());
+                break;
+            }
+        }
+
+        if (mojoDescriptor == null) {
+            getLog().error("Cannot find goal that corresponds to " + mojoClass);
+            throw new IllegalStateException("This plugin should always have the " + mojoClass.getName() + " goal");
+        }
+        return mojoDescriptor;
+    }
+
+    private Plugin findThisPluginInProject(MavenProject project) {
+        Plugin plugin = null;
+        for (Plugin b : project.getBuild().getPlugins()) {
+            if (pluginGroupId.equals(b.getGroupId()) && pluginArtifactId.equals(b.getArtifactId())) {
+                plugin = b.clone();
+                plugin.setVersion(pluginVersion); // we want to use our version
+                break;
+            }
+        }
+        if (plugin == null) {
+            getLog().debug("Falling back to our own plugin");
+            plugin = new Plugin();
+            plugin.setGroupId(pluginGroupId);
+            plugin.setArtifactId(pluginArtifactId);
+            plugin.setVersion(pluginVersion);
+        }
+        return plugin;
     }
 
     private void injectMissingArtifacts(MavenProject destination, MavenProject source) {
@@ -735,4 +938,30 @@ public class RunMojo extends AbstractJSZipMojo {
             throw new MojoExecutionException(e.getMessage(), e);
         }
     }
+
+    private Xpp3Dom convert(MojoDescriptor mojoDescriptor) {
+        PlexusConfiguration config = mojoDescriptor.getMojoConfiguration();
+        return (config != null) ? convert(config) : new Xpp3Dom("configuration");
+    }
+
+    private Xpp3Dom convert(PlexusConfiguration config) {
+        if (config == null) {
+            return null;
+        }
+
+        Xpp3Dom dom = new Xpp3Dom(config.getName());
+        dom.setValue(config.getValue(null));
+
+        for (String attrib : config.getAttributeNames()) {
+            dom.setAttribute(attrib, config.getAttribute(attrib, null));
+        }
+
+        for (int n = config.getChildCount(), i = 0; i < n; i++) {
+            dom.addChild(convert(config.getChild(i)));
+        }
+
+        return dom;
+    }
+
+
 }

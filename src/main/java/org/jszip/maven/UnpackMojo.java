@@ -18,8 +18,22 @@ package org.jszip.maven;
 
 import org.apache.maven.artifact.Artifact;
 import org.apache.maven.artifact.ArtifactUtils;
+import org.apache.maven.execution.MavenSession;
+import org.apache.maven.model.Plugin;
+import org.apache.maven.model.PluginExecution;
+import org.apache.maven.plugin.InvalidPluginDescriptorException;
+import org.apache.maven.plugin.MavenPluginManager;
+import org.apache.maven.plugin.Mojo;
+import org.apache.maven.plugin.MojoExecution;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugin.MojoFailureException;
+import org.apache.maven.plugin.PluginConfigurationException;
+import org.apache.maven.plugin.PluginContainerException;
+import org.apache.maven.plugin.PluginDescriptorParsingException;
+import org.apache.maven.plugin.PluginResolutionException;
+import org.apache.maven.plugin.descriptor.MojoDescriptor;
+import org.apache.maven.plugin.descriptor.PluginDescriptor;
+import org.apache.maven.project.MavenProject;
 import org.apache.maven.shared.artifact.filter.collection.ArtifactFilterException;
 import org.apache.maven.shared.artifact.filter.collection.FilterArtifacts;
 import org.apache.maven.shared.artifact.filter.collection.ProjectTransitivityFilter;
@@ -28,9 +42,13 @@ import org.apache.maven.shared.artifact.filter.collection.TypeFilter;
 import org.codehaus.plexus.archiver.ArchiverException;
 import org.codehaus.plexus.archiver.zip.ZipUnArchiver;
 import org.codehaus.plexus.components.io.fileselectors.IncludeExcludeFileSelector;
+import org.codehaus.plexus.util.FileUtils;
 import org.codehaus.plexus.util.StringUtils;
+import org.sonatype.aether.repository.RemoteRepository;
 
 import java.io.File;
+import java.io.IOException;
+import java.util.List;
 import java.util.Set;
 
 /**
@@ -58,6 +76,31 @@ public class UnpackMojo extends AbstractJSZipMojo {
     private ZipUnArchiver zipUnArchiver;
 
     /**
+     * @parameter expression="${reactorProjects}"
+     * @required
+     * @readonly
+     */
+    protected List<MavenProject> reactorProjects;
+
+    /**
+     * The Maven plugin Manager
+     *
+     * @component
+     * @readonly
+     * @required
+     */
+    private MavenPluginManager mavenPluginManager;
+
+    /**
+     * The current build session instance. This is used for plugin manager API calls.
+     *
+     * @parameter expression="${session}"
+     * @required
+     * @readonly
+     */
+    private MavenSession session;
+
+    /**
      * @see org.apache.maven.plugin.Mojo#execute()
      */
     public void execute()
@@ -83,20 +126,63 @@ public class UnpackMojo extends AbstractJSZipMojo {
 
         for (Artifact artifact : artifacts) {
             getLog().info("Unpacking " + ArtifactUtils.key(artifact));
-            unpack(artifact.getFile(), webappDirectory, null, null);
+            unpack(artifact, webappDirectory, null, null);
         }
     }
 
-    protected void unpack(File file, File location, String includes, String excludes)
+    protected void unpack(Artifact artifact, File location, String includes, String excludes)
             throws MojoExecutionException {
+        File file = artifact.getFile();
         if (file.isDirectory()) {
-            // TODO handle unpack when the artifact is a directory
-            try {
-                throw new UnsupportedOperationException(
-                        "Have not written the code to handle unpacking from the reactor where the reactor has not "
-                                + "advanced far enough to generate the packed artifact");
-            } catch (UnsupportedOperationException e) {
-                throw new MojoExecutionException("Try running with phase of 'package' or later", e);
+            MavenProject fromReactor = findProject(reactorProjects, artifact);
+            if (fromReactor != null) {
+                MavenSession session = this.session.clone();
+                session.setCurrentProject(fromReactor);
+                List<RemoteRepository> remoteRepositories = fromReactor.getRemotePluginRepositories();
+                Plugin plugin = findThisPluginInProject(fromReactor);
+                try {
+                    PluginDescriptor pluginDescriptor = mavenPluginManager
+                            .getPluginDescriptor(plugin, remoteRepositories, session.getRepositorySession());
+                    Class<JSZipMojo> mojoClass = JSZipMojo.class;
+                    MojoDescriptor jszipDescriptor = findMojoDescriptor(pluginDescriptor, mojoClass);
+
+                    for (PluginExecution pluginExecution : plugin.getExecutions()) {
+                        if (!pluginExecution.getGoals().contains(jszipDescriptor.getGoal())) {
+                            continue;
+                        }
+                        MojoExecution mojoExecution =
+                                createMojoExecution(plugin, pluginExecution, jszipDescriptor);
+                        Mojo mojo = mavenPluginManager
+                                .getConfiguredMojo(Mojo.class, session, mojoExecution);
+                        try {
+                            File contentDirectory = invokeMethod(mojo, File.class, "getContentDirectory");
+                            if (contentDirectory.isDirectory()) {
+                                FileUtils.copyDirectory(contentDirectory, location);
+                            }
+                            // TODO filtering support
+                            File resourcesDirectory = invokeMethod(mojo, File.class, "getResourcesDirectory");
+                            if (resourcesDirectory.isDirectory()) {
+                                FileUtils.copyDirectory(resourcesDirectory, location);
+                            }
+                        } finally {
+                            mavenPluginManager.releaseMojo(mojo, mojoExecution);
+                        }
+                    }
+                } catch (PluginConfigurationException e) {
+                    throw new MojoExecutionException(e.getMessage(), e);
+                } catch (IOException e) {
+                    throw new MojoExecutionException(e.getMessage(), e);
+                } catch (InvalidPluginDescriptorException e) {
+                    throw new MojoExecutionException(e.getMessage(), e);
+                } catch (PluginResolutionException e) {
+                    throw new MojoExecutionException(e.getMessage(), e);
+                } catch (PluginDescriptorParsingException e) {
+                    throw new MojoExecutionException(e.getMessage(), e);
+                } catch (PluginContainerException e) {
+                    throw new MojoExecutionException(e.getMessage(), e);
+                }
+            } else {
+                throw new MojoExecutionException("Cannot find jzsip artifact: " + artifact.getId());
             }
         } else {
             try {

@@ -101,6 +101,12 @@ public class UnpackMojo extends AbstractJSZipMojo {
     private MavenSession session;
 
     /**
+     * @parameter expression="${plugin}"
+     * @readonly
+     */
+    private PluginDescriptor pluginDescriptor;
+
+    /**
      * @see org.apache.maven.plugin.Mojo#execute()
      */
     public void execute()
@@ -138,13 +144,11 @@ public class UnpackMojo extends AbstractJSZipMojo {
             if (fromReactor != null) {
                 MavenSession session = this.session.clone();
                 session.setCurrentProject(fromReactor);
-                List<RemoteRepository> remoteRepositories = fromReactor.getRemotePluginRepositories();
                 Plugin plugin = findThisPluginInProject(fromReactor);
                 try {
-                    PluginDescriptor pluginDescriptor = mavenPluginManager
-                            .getPluginDescriptor(plugin, remoteRepositories, session.getRepositorySession());
-                    Class<JSZipMojo> mojoClass = JSZipMojo.class;
-                    MojoDescriptor jszipDescriptor = findMojoDescriptor(pluginDescriptor, mojoClass);
+                    // we cheat here and use our version of the plugin... but this is less of a cheat than the only
+                    // other way which is via reflection.
+                    MojoDescriptor jszipDescriptor = findMojoDescriptor(this.pluginDescriptor, JSZipMojo.class);
 
                     for (PluginExecution pluginExecution : plugin.getExecutions()) {
                         if (!pluginExecution.getGoals().contains(jszipDescriptor.getGoal())) {
@@ -152,15 +156,16 @@ public class UnpackMojo extends AbstractJSZipMojo {
                         }
                         MojoExecution mojoExecution =
                                 createMojoExecution(plugin, pluginExecution, jszipDescriptor);
-                        Mojo mojo = mavenPluginManager
+                        JSZipMojo mojo = (JSZipMojo)mavenPluginManager
                                 .getConfiguredMojo(Mojo.class, session, mojoExecution);
                         try {
-                            File contentDirectory = invokeMethod(mojo, File.class, "getContentDirectory");
+                            File contentDirectory = mojo.getContentDirectory();
                             if (contentDirectory.isDirectory()) {
                                 FileUtils.copyDirectory(contentDirectory, location);
                             }
                             // TODO filtering support
-                            File resourcesDirectory = invokeMethod(mojo, File.class, "getResourcesDirectory");
+                            // Note filtering support may not be required at this point because unpack
+                            File resourcesDirectory = mojo.getResourcesDirectory();
                             if (resourcesDirectory.isDirectory()) {
                                 FileUtils.copyDirectory(resourcesDirectory, location);
                             }
@@ -171,12 +176,6 @@ public class UnpackMojo extends AbstractJSZipMojo {
                 } catch (PluginConfigurationException e) {
                     throw new MojoExecutionException(e.getMessage(), e);
                 } catch (IOException e) {
-                    throw new MojoExecutionException(e.getMessage(), e);
-                } catch (InvalidPluginDescriptorException e) {
-                    throw new MojoExecutionException(e.getMessage(), e);
-                } catch (PluginResolutionException e) {
-                    throw new MojoExecutionException(e.getMessage(), e);
-                } catch (PluginDescriptorParsingException e) {
                     throw new MojoExecutionException(e.getMessage(), e);
                 } catch (PluginContainerException e) {
                     throw new MojoExecutionException(e.getMessage(), e);

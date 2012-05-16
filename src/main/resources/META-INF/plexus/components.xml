@@ -24,6 +24,7 @@
         <phases>
           <validate>org.jszip.maven:jszip-maven-plugin:initialize</validate>
           <process-resources>org.apache.maven.plugins:maven-resources-plugin:resources</process-resources>
+          <process-test-resources>org.apache.maven.plugins:maven-resources-plugin:testResources</process-test-resources>
           <package>org.jszip.maven:jszip-maven-plugin:jszip</package>
           <install>org.apache.maven.plugins:maven-install-plugin:install</install>
           <deploy>org.apache.maven.plugins:maven-deploy-plugin:deploy</deploy>

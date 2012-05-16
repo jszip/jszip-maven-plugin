@@ -28,7 +28,6 @@ import org.apache.maven.execution.MavenSession;
 import org.apache.maven.model.Plugin;
 import org.apache.maven.model.PluginExecution;
 import org.apache.maven.model.building.ModelBuildingRequest;
-import org.apache.maven.plugin.InvalidPluginDescriptorException;
 import org.apache.maven.plugin.MavenPluginManager;
 import org.apache.maven.plugin.Mojo;
 import org.apache.maven.plugin.MojoExecution;
@@ -36,8 +35,6 @@ import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugin.MojoFailureException;
 import org.apache.maven.plugin.PluginConfigurationException;
 import org.apache.maven.plugin.PluginContainerException;
-import org.apache.maven.plugin.PluginDescriptorParsingException;
-import org.apache.maven.plugin.PluginResolutionException;
 import org.apache.maven.plugin.descriptor.MojoDescriptor;
 import org.apache.maven.plugin.descriptor.PluginDescriptor;
 import org.apache.maven.project.DefaultProjectBuildingRequest;
@@ -53,12 +50,8 @@ import org.apache.maven.shared.artifact.filter.collection.FilterArtifacts;
 import org.apache.maven.shared.artifact.filter.collection.ProjectTransitivityFilter;
 import org.apache.maven.shared.artifact.filter.collection.ScopeFilter;
 import org.apache.maven.shared.artifact.filter.collection.TypeFilter;
-import org.codehaus.plexus.configuration.PlexusConfiguration;
-import org.codehaus.plexus.util.FileUtils;
 import org.codehaus.plexus.util.StringUtils;
 import org.codehaus.plexus.util.dag.CycleDetectedException;
-import org.codehaus.plexus.util.xml.Xpp3Dom;
-import org.codehaus.plexus.util.xml.Xpp3DomUtils;
 import org.eclipse.jetty.server.Connector;
 import org.eclipse.jetty.server.Handler;
 import org.eclipse.jetty.server.Server;
@@ -231,6 +224,12 @@ public class RunMojo extends AbstractJSZipMojo {
      */
     private MavenPluginManager mavenPluginManager;
 
+    /**
+     * @parameter expression="${plugin}"
+     * @readonly
+     */
+    private PluginDescriptor pluginDescriptor;
+
     private final String scope = "test";
     private final long classpathCheckInterval = TimeUnit.SECONDS.toMillis(10);
 
@@ -297,7 +296,7 @@ public class RunMojo extends AbstractJSZipMojo {
             Collections.reverse(resources);
             getLog().debug("Overlays:");
             int index = 0;
-            for (Resource r: resources) {
+            for (Resource r : resources) {
                 getLog().debug("  [" + index++ + "] = " + r);
             }
             final ResourceCollection resourceCollection =
@@ -433,7 +432,7 @@ public class RunMojo extends AbstractJSZipMojo {
                         Collections.reverse(newResources);
                         getLog().debug("New overlays:");
                         int index = 0;
-                        for (Resource r: newResources) {
+                        for (Resource r : newResources) {
                             getLog().debug("  [" + index++ + "] = " + r);
                         }
                         boolean overlayPathsChanged = !resources.equals(newResources);
@@ -444,15 +443,6 @@ public class RunMojo extends AbstractJSZipMojo {
                         }
                         overlaysChanged = overlaysChanged || overlayPathsChanged;
                     } catch (ArtifactFilterException e) {
-                        getLog().info("Re-parse aborted due to overlay evaluation problems", e);
-                        continue;
-                    } catch (PluginResolutionException e) {
-                        getLog().info("Re-parse aborted due to overlay evaluation problems", e);
-                        continue;
-                    } catch (PluginDescriptorParsingException e) {
-                        getLog().info("Re-parse aborted due to overlay evaluation problems", e);
-                        continue;
-                    } catch (InvalidPluginDescriptorException e) {
                         getLog().info("Re-parse aborted due to overlay evaluation problems", e);
                         continue;
                     } catch (PluginConfigurationException e) {
@@ -506,7 +496,7 @@ public class RunMojo extends AbstractJSZipMojo {
                         Collections.reverse(resources);
                         getLog().debug("Overlays:");
                         int index = 0;
-                        for (Resource r: resources) {
+                        for (Resource r : resources) {
                             getLog().debug("  [" + index++ + "] = " + r);
                         }
                         final ResourceCollection resourceCollection =
@@ -535,22 +525,17 @@ public class RunMojo extends AbstractJSZipMojo {
     }
 
     private void addOverlayResources(List<MavenProject> reactorProjects, List<Resource> resources, Artifact a)
-            throws PluginResolutionException, PluginDescriptorParsingException, InvalidPluginDescriptorException,
+            throws
             PluginConfigurationException, PluginContainerException, IOException, MojoExecutionException {
         MavenProject fromReactor = findProject(reactorProjects, a);
         if (fromReactor != null) {
             MavenSession session = this.session.clone();
             session.setCurrentProject(fromReactor);
-            List<RemoteRepository> remoteRepositories =
-                    session.getCurrentProject().getRemotePluginRepositories();
             Plugin plugin = findThisPluginInProject(fromReactor);
 
-            PluginDescriptor pluginDescriptor = mavenPluginManager
-                    .getPluginDescriptor(plugin, remoteRepositories,
-                            session.getRepositorySession());
-
-            Class<JSZipMojo> mojoClass = JSZipMojo.class;
-            MojoDescriptor jszipDescriptor = findMojoDescriptor(pluginDescriptor, mojoClass);
+                    // we cheat here and use our version of the plugin... but this is less of a cheat than the only
+                    // other way which is via reflection.
+            MojoDescriptor jszipDescriptor = findMojoDescriptor(pluginDescriptor, JSZipMojo.class);
 
             for (PluginExecution pluginExecution : plugin.getExecutions()) {
                 if (!pluginExecution.getGoals().contains(jszipDescriptor.getGoal())) {
@@ -558,17 +543,17 @@ public class RunMojo extends AbstractJSZipMojo {
                 }
                 MojoExecution mojoExecution =
                         createMojoExecution(plugin, pluginExecution, jszipDescriptor);
-                Mojo mojo = mavenPluginManager
+                JSZipMojo mojo = (JSZipMojo) mavenPluginManager
                         .getConfiguredMojo(Mojo.class, session, mojoExecution);
                 try {
-                    File contentDirectory = invokeMethod(mojo, File.class, "getContentDirectory");
+                    File contentDirectory = mojo.getContentDirectory();
                     if (contentDirectory.isDirectory()) {
                         getLog().debug(
                                 "Adding resource directory " + contentDirectory);
                         resources.add(Resource.newResource(contentDirectory));
                     }
                     // TODO filtering support
-                    File resourcesDirectory = invokeMethod(mojo, File.class, "getResourcesDirectory");
+                    File resourcesDirectory = mojo.getResourcesDirectory();
                     if (resourcesDirectory.isDirectory()) {
                         getLog().debug(
                                 "Adding resource directory " + resourcesDirectory);

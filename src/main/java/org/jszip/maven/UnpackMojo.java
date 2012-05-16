@@ -163,8 +163,6 @@ public class UnpackMojo extends AbstractJSZipMojo {
                             if (contentDirectory.isDirectory()) {
                                 FileUtils.copyDirectory(contentDirectory, location);
                             }
-                            // TODO filtering support
-                            // Note filtering support may not be required at this point because unpack
                             File resourcesDirectory = mojo.getResourcesDirectory();
                             if (resourcesDirectory.isDirectory()) {
                                 FileUtils.copyDirectory(resourcesDirectory, location);

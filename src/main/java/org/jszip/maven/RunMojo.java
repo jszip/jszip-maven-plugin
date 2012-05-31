@@ -50,6 +50,12 @@ import org.apache.maven.shared.artifact.filter.collection.FilterArtifacts;
 import org.apache.maven.shared.artifact.filter.collection.ProjectTransitivityFilter;
 import org.apache.maven.shared.artifact.filter.collection.ScopeFilter;
 import org.apache.maven.shared.artifact.filter.collection.TypeFilter;
+import org.apache.maven.shared.invoker.DefaultInvocationRequest;
+import org.apache.maven.shared.invoker.DefaultInvoker;
+import org.apache.maven.shared.invoker.InvocationRequest;
+import org.apache.maven.shared.invoker.Invoker;
+import org.apache.maven.shared.invoker.InvokerLogger;
+import org.apache.maven.shared.invoker.MavenInvocationException;
 import org.codehaus.plexus.util.StringUtils;
 import org.codehaus.plexus.util.dag.CycleDetectedException;
 import org.eclipse.jetty.server.Connector;
@@ -63,7 +69,6 @@ import org.eclipse.jetty.util.resource.Resource;
 import org.eclipse.jetty.util.resource.ResourceCollection;
 import org.eclipse.jetty.webapp.WebAppClassLoader;
 import org.eclipse.jetty.webapp.WebAppContext;
-import org.sonatype.aether.repository.RemoteRepository;
 
 import java.io.File;
 import java.io.IOException;
@@ -71,6 +76,7 @@ import java.net.MalformedURLException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
@@ -256,6 +262,7 @@ public class RunMojo extends AbstractJSZipMojo {
         getLog().info("Starting JSZip run: module " + ArtifactUtils.versionlessKey(project.getGroupId(),
                 project.getArtifactId()));
         MavenProject project = this.project;
+        long lastResourceChange = System.currentTimeMillis();
         long lastClassChange = System.currentTimeMillis();
         long lastPomChange = getPomsLastModified();
 
@@ -350,6 +357,11 @@ public class RunMojo extends AbstractJSZipMojo {
                     nextClasspathCheck = System.currentTimeMillis() + classpathCheckInterval;
                 }
                 if (!classPathChanged && !overlaysChanged && !pomsChanged) {
+                    try {
+                        lastResourceChange = processResourceSourceChanges(reactorProjects, project, lastResourceChange);
+                    } catch (ArtifactFilterException e) {
+                        getLog().debug("Couldn't process resource changes", e);
+                    }
                     try {
                         Thread.sleep(500);
                     } catch (InterruptedException e) {
@@ -533,8 +545,8 @@ public class RunMojo extends AbstractJSZipMojo {
             session.setCurrentProject(fromReactor);
             Plugin plugin = findThisPluginInProject(fromReactor);
 
-                    // we cheat here and use our version of the plugin... but this is less of a cheat than the only
-                    // other way which is via reflection.
+            // we cheat here and use our version of the plugin... but this is less of a cheat than the only
+            // other way which is via reflection.
             MojoDescriptor jszipDescriptor = findMojoDescriptor(pluginDescriptor, JSZipMojo.class);
 
             for (PluginExecution pluginExecution : plugin.getExecutions()) {
@@ -553,6 +565,19 @@ public class RunMojo extends AbstractJSZipMojo {
                         resources.add(Resource.newResource(contentDirectory));
                     }
                     // TODO filtering support
+                    //
+                    // The good news:
+                    //  * resources:resources gets the list of resources from /project/build/resources *only*
+                    // The bad news:
+                    //  * looks like maven-invoker is the only way to safely invoke it again
+                    //
+                    // probable solution
+                    //
+                    // 1. get the list of all resource directories, add on the scan for changes
+                    // 2. if a change to a non-filtered file, just copy it over
+                    // 3. if a change to a filtered file or a change to effective pom, use maven-invoker to run the
+                    //    lifecycle up to 'compile' or 'process-resources' <-- preferred
+                    //
                     File resourcesDirectory = mojo.getResourcesDirectory();
                     if (resourcesDirectory.isDirectory()) {
                         getLog().debug(
@@ -607,6 +632,136 @@ public class RunMojo extends AbstractJSZipMojo {
         }
     }
 
+    private long processResourceSourceChanges(List<MavenProject> reactorProjects, MavenProject project,
+                                              long lastModified)
+            throws ArtifactFilterException {
+        long newLastModified = lastModified;
+        getLog().debug("Last modified for resource sources = " + lastModified);
+
+        Set<File> checked = new HashSet<File>();
+        for (Artifact a : getOverlayArtifacts(project, scope)) {
+            MavenProject p = findProject(reactorProjects, a);
+            if (p == null || p.getBuild() == null || p.getBuild().getResources() == null) {
+                continue;
+            }
+            boolean changed = false;
+            for (org.apache.maven.model.Resource r : p.getBuild().getResources()) {
+                File dir = new File(r.getDirectory());
+                getLog().debug("Checking last modified for " + dir);
+                if (checked.contains(dir)) {
+                    continue;
+                }
+                checked.add(dir);
+                long dirLastModified = recursiveLastModified(dir);
+                if (lastModified < dirLastModified) {
+                    changed = true;
+                    break;
+                }
+            }
+            if (changed) {
+                InvocationRequest request = new DefaultInvocationRequest();
+                request.setPomFile(p.getFile());
+                request.setInteractive(false);
+                request.setRecursive(false);
+                request.setGoals(Collections.singletonList("process-resources"));
+
+                Invoker invoker = new DefaultInvoker();
+                invoker.setLogger(new InvokerLogger() {
+
+                    public void debug(String content) {
+                        getLog().debug(content);
+                    }
+
+                    public void info(Throwable error) {
+                        getLog().info(error);
+                    }
+
+                    public void info(String content, Throwable error) {
+                        getLog().info(content, error);
+                    }
+
+                    public void info(String content) {
+                        getLog().info(content);
+                    }
+
+                    public void warn(Throwable error) {
+                        getLog().warn(error);
+                    }
+
+                    public void error(String content, Throwable error) {
+                        getLog().error(content, error);
+                    }
+
+                    public void debug(String content, Throwable error) {
+                        getLog().debug(content, error);
+                    }
+
+                    public void debug(Throwable error) {
+                        getLog().debug(error);
+                    }
+
+                    public void warn(String content) {
+                        getLog().warn(content);
+                    }
+
+                    public void error(Throwable error) {
+                        getLog().error(error);
+                    }
+
+                    public void error(String content) {
+                        getLog().error(content);
+                    }
+
+                    public void warn(String content, Throwable error) {
+                        getLog().warn(content, error);
+                    }
+
+                    public void fatalError(String s) {
+                        getLog().error(s);
+                    }
+
+                    public boolean isDebugEnabled() {
+                        return getLog().isDebugEnabled();
+                    }
+
+                    public boolean isInfoEnabled() {
+                        return getLog().isInfoEnabled();
+                    }
+
+                    public boolean isWarnEnabled() {
+                        return getLog().isWarnEnabled();
+                    }
+
+                    public boolean isErrorEnabled() {
+                        return getLog().isErrorEnabled();
+                    }
+
+                    public void fatalError(String s, Throwable throwable) {
+                        getLog().error(s, throwable);
+                    }
+
+                    public boolean isFatalErrorEnabled() {
+                        return getLog().isErrorEnabled();
+                    }
+
+                    public void setThreshold(int i) {
+                    }
+
+                    public int getThreshold() {
+                        return 0;
+                    }
+                });
+                try {
+                    invoker.execute(request);
+                    newLastModified = System.currentTimeMillis();
+                } catch (MavenInvocationException e) {
+                    getLog().info(e);
+                }
+            }
+        }
+        return newLastModified;
+    }
+
     private List<MavenProject> buildReactorProjects() throws Exception {
 
         List<MavenProject> projects = new ArrayList<MavenProject>();
@@ -637,30 +792,36 @@ public class RunMojo extends AbstractJSZipMojo {
         try {
             for (String element : getClasspathElements(project, scope)) {
                 File elementFile = new File(element);
-                if (elementFile.exists()) {
-                    result = Math.max(elementFile.lastModified(), result);
-                    if (elementFile.isDirectory()) {
-                        Stack<Iterator<File>> stack = new Stack<Iterator<File>>();
-                        stack.push(contentsAsList(elementFile).iterator());
-                        while (!stack.empty()) {
-                            Iterator<File> i = stack.pop();
-                            while (i.hasNext()) {
-                                File file = i.next();
-                                result = Math.max(file.lastModified(), result);
-                                if (file.isDirectory()) {
-                                    stack.push(i);
-                                    i = contentsAsList(file).iterator();
-                                }
-                            }
-                        }
-                    }
-                }
+                result = Math.max(recursiveLastModified(elementFile), result);
             }
         } catch (DependencyResolutionRequiredException e) {
             // ignore
         }
         return result;
 
+    }
+
+    private long recursiveLastModified(File fileOrDirectory) {
+        long result = Long.MIN_VALUE;
+        if (fileOrDirectory.exists()) {
+            result = Math.max(fileOrDirectory.lastModified(), result);
+            if (fileOrDirectory.isDirectory()) {
+                Stack<Iterator<File>> stack = new Stack<Iterator<File>>();
+                stack.push(contentsAsList(fileOrDirectory).iterator());
+                while (!stack.empty()) {
+                    Iterator<File> i = stack.pop();
+                    while (i.hasNext()) {
+                        File file = i.next();
+                        result = Math.max(file.lastModified(), result);
+                        if (file.isDirectory()) {
+                            stack.push(i);
+                            i = contentsAsList(file).iterator();
+                        }
+                    }
+                }
+            }
+        }
+        return result;
     }
 
     private static List<File> contentsAsList(File directory) {

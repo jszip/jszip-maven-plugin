@@ -373,13 +373,10 @@ public class RunMojo extends AbstractJSZipMojo {
                     } catch (ArtifactFilterException e) {
                         getLog().debug("Couldn't process resource changes", e);
                     }
-                    nextCheck = nextCheck - System.currentTimeMillis();
-                    if (nextCheck > 0) {
-                        try {
-                            Thread.sleep(nextCheck);
-                        } catch (InterruptedException e) {
-                            getLog().debug("Interrupted", e);
-                        }
+                    try {
+                        Thread.sleep(Math.max(100L, nextCheck - System.currentTimeMillis());
+                    } catch (InterruptedException e) {
+                        getLog().debug("Interrupted", e);
                     }
                     continue;
                 }

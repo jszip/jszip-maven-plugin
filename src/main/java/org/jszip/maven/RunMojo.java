@@ -50,6 +50,9 @@ import org.apache.maven.shared.artifact.filter.collection.FilterArtifacts;
 import org.apache.maven.shared.artifact.filter.collection.ProjectTransitivityFilter;
 import org.apache.maven.shared.artifact.filter.collection.ScopeFilter;
 import org.apache.maven.shared.artifact.filter.collection.TypeFilter;
+import org.apache.maven.shared.filtering.MavenFilteringException;
+import org.apache.maven.shared.filtering.MavenResourcesExecution;
+import org.apache.maven.shared.filtering.MavenResourcesFiltering;
 import org.apache.maven.shared.invoker.DefaultInvocationRequest;
 import org.apache.maven.shared.invoker.DefaultInvoker;
 import org.apache.maven.shared.invoker.InvocationRequest;
@@ -235,6 +238,12 @@ public class RunMojo extends AbstractJSZipMojo {
      * @readonly
      */
     private PluginDescriptor pluginDescriptor;
+    /**
+     * @component role="org.apache.maven.shared.filtering.MavenResourcesFiltering" role-hint="default"
+     * @required
+     */
+    protected MavenResourcesFiltering mavenResourcesFiltering;
+
 
     private final String scope = "test";
     private final long classpathCheckInterval = TimeUnit.SECONDS.toMillis(10);
@@ -344,6 +353,7 @@ public class RunMojo extends AbstractJSZipMojo {
             getLog().info("Context started. Will restart if changes to poms detected.");
             long nextClasspathCheck = System.currentTimeMillis() + classpathCheckInterval;
             while (true) {
+                long nextCheck = System.currentTimeMillis() + 500;
                 long pomsLastModified = getPomsLastModified();
                 boolean pomsChanged = lastPomChange < pomsLastModified;
                 boolean overlaysChanged = false;
@@ -357,15 +367,19 @@ public class RunMojo extends AbstractJSZipMojo {
                     nextClasspathCheck = System.currentTimeMillis() + classpathCheckInterval;
                 }
                 if (!classPathChanged && !overlaysChanged && !pomsChanged) {
+
                     try {
                         lastResourceChange = processResourceSourceChanges(reactorProjects, project, lastResourceChange);
                     } catch (ArtifactFilterException e) {
                         getLog().debug("Couldn't process resource changes", e);
                     }
-                    try {
-                        Thread.sleep(500);
-                    } catch (InterruptedException e) {
-                        getLog().debug("Interrupted", e);
+                    nextCheck = nextCheck - System.currentTimeMillis();
+                    if (nextCheck > 0) {
+                        try {
+                            Thread.sleep(nextCheck);
+                        } catch (InterruptedException e) {
+                            getLog().debug("Interrupted", e);
+                        }
                     }
                     continue;
                 }
@@ -645,6 +659,7 @@ public class RunMojo extends AbstractJSZipMojo {
                 continue;
             }
             boolean changed = false;
+            boolean changedFiltered = false;
             for (org.apache.maven.model.Resource r : p.getBuild().getResources()) {
                 File dir = new File(r.getDirectory());
                 getLog().debug("Checking last modified for " + dir);
@@ -655,10 +670,13 @@ public class RunMojo extends AbstractJSZipMojo {
                 long dirLastModified = recursiveLastModified(dir);
                 if (lastModified < dirLastModified) {
                     changed = true;
-                    break;
+                    if (r.isFiltering()) changedFiltered = true;
                 }
             }
-            if (changed) {
+            if (changedFiltered) {
+                getLog().info("Detected change in resources of " + ArtifactUtils.versionlessKey(a)+"...");
+                getLog().debug("Resource filtering is used by project, invoking Maven to handle update");
+                // need to let Maven handle it as its the only (although slower) safe way to do it right with filters
                 InvocationRequest request = new DefaultInvocationRequest();
                 request.setPomFile(p.getFile());
                 request.setInteractive(false);
@@ -666,95 +684,24 @@ public class RunMojo extends AbstractJSZipMojo {
                 request.setGoals(Collections.singletonList("process-resources"));
 
                 Invoker invoker = new DefaultInvoker();
-                invoker.setLogger(new InvokerLogger() {
-
-                    public void debug(String content) {
-                        getLog().debug(content);
-                    }
-
-                    public void info(Throwable error) {
-                        getLog().info(error);
-                    }
-
-                    public void info(String content, Throwable error) {
-                        getLog().info(content, error);
-                    }
-
-                    public void info(String content) {
-                        getLog().info(content);
-                    }
-
-                    public void warn(Throwable error) {
-                        getLog().warn(error);
-                    }
-
-                    public void error(String content, Throwable error) {
-                        getLog().error(content, error);
-                    }
-
-                    public void debug(String content, Throwable error) {
-                        getLog().debug(content, error);
-                    }
-
-                    public void debug(Throwable error) {
-                        getLog().debug(error);
-                    }
-
-                    public void warn(String content) {
-                        getLog().warn(content);
-                    }
-
-                    public void error(Throwable error) {
-                        getLog().error(error);
-                    }
-
-                    public void error(String content) {
-                        getLog().error(content);
-                    }
-
-                    public void warn(String content, Throwable error) {
-                        getLog().warn(content, error);
-                    }
-
-                    public void fatalError(String s) {
-                        getLog().error(s);
-                    }
-
-                    public boolean isDebugEnabled() {
-                        return getLog().isDebugEnabled();
-                    }
-
-                    public boolean isInfoEnabled() {
-                        return getLog().isInfoEnabled();
-                    }
-
-                    public boolean isWarnEnabled() {
-                        return getLog().isWarnEnabled();
-                    }
-
-                    public boolean isErrorEnabled() {
-                        return getLog().isErrorEnabled();
-                    }
-
-                    public void fatalError(String s, Throwable throwable) {
-                        getLog().error(s, throwable);
-                    }
-
-                    public boolean isFatalErrorEnabled() {
-                        return getLog().isErrorEnabled();
-                    }
-
-                    public void setThreshold(int i) {
-                    }
-
-                    public int getThreshold() {
-                        return 0;
-                    }
-                });
+                invoker.setLogger(new MavenProxyLogger());
                 try {
                     invoker.execute(request);
                     newLastModified = System.currentTimeMillis();
+                    getLog().info("Change in resources of " + ArtifactUtils.versionlessKey(a) + " processed");
                 } catch (MavenInvocationException e) {
+                    getLog().info(e);
+                }
+            } else if (changed) {
+                getLog().info("Detected change in resources of " + ArtifactUtils.versionlessKey(a)+"...");
+                getLog().debug("Resource filtering is not used by project, handling update ourselves");
+                // can do it fast ourselves
+                MavenResourcesExecution mavenResourcesExecution = new MavenResourcesExecution(p.getResources(), new File(p.getBuild().getOutputDirectory()), p, p.getProperties().getProperty("project.build.sourceEncoding"), Collections.emptyList(), Collections.emptyList(), session);
+                try {
+                    mavenResourcesFiltering.filterResources(mavenResourcesExecution);
+                    newLastModified = System.currentTimeMillis();
+                    getLog().info("Change in resources of " + ArtifactUtils.versionlessKey(a) + " processed");
+                } catch (MavenFilteringException e) {
                     getLog().info(e);
                 }
             }
@@ -977,4 +924,89 @@ public class RunMojo extends AbstractJSZipMojo {
     }
 
 
+    private class MavenProxyLogger implements InvokerLogger {
+
+        public void debug(String content) {
+            getLog().debug(content);
+        }
+
+        public void info(Throwable error) {
+            getLog().info(error);
+        }
+
+        public void info(String content, Throwable error) {
+            getLog().info(content, error);
+        }
+
+        public void info(String content) {
+            getLog().info(content);
+        }
+
+        public void warn(Throwable error) {
+            getLog().warn(error);
+        }
+
+        public void error(String content, Throwable error) {
+            getLog().error(content, error);
+        }
+
+        public void debug(String content, Throwable error) {
+            getLog().debug(content, error);
+        }
+
+        public void debug(Throwable error) {
+            getLog().debug(error);
+        }
+
+        public void warn(String content) {
+            getLog().warn(content);
+        }
+
+        public void error(Throwable error) {
+            getLog().error(error);
+        }
+
+        public void error(String content) {
+            getLog().error(content);
+        }
+
+        public void warn(String content, Throwable error) {
+            getLog().warn(content, error);
+        }
+
+        public void fatalError(String s) {
+            getLog().error(s);
+        }
+
+        public boolean isDebugEnabled() {
+            return getLog().isDebugEnabled();
+        }
+
+        public boolean isInfoEnabled() {
+            return getLog().isInfoEnabled();
+        }
+
+        public boolean isWarnEnabled() {
+            return getLog().isWarnEnabled();
+        }
+
+        public boolean isErrorEnabled() {
+            return getLog().isErrorEnabled();
+        }
+
+        public void fatalError(String s, Throwable throwable) {
+            getLog().error(s, throwable);
+        }
+
+        public boolean isFatalErrorEnabled() {
+            return getLog().isErrorEnabled();
+        }
+
+        public void setThreshold(int i) {
+        }
+
+        public int getThreshold() {
+            return 0;
+        }
+    }
 }

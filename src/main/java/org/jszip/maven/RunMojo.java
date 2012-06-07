@@ -72,6 +72,7 @@ import org.eclipse.jetty.util.resource.Resource;
 import org.eclipse.jetty.util.resource.ResourceCollection;
 import org.eclipse.jetty.webapp.WebAppClassLoader;
 import org.eclipse.jetty.webapp.WebAppContext;
+import org.jszip.jetty.JettyWebAppContext;
 
 import java.io.File;
 import java.io.IOException;
@@ -318,7 +319,7 @@ public class RunMojo extends AbstractJSZipMojo {
             final ResourceCollection resourceCollection =
                     new ResourceCollection(resources.toArray(new Resource[resources.size()]));
 
-            webAppContext = new WebAppContext();
+            webAppContext = new JettyWebAppContext();
             webAppContext.setWar(webAppSourceDirectory.getAbsolutePath());
             webAppContext.setBaseResource(resourceCollection);
 

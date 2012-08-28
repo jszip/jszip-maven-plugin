@@ -73,6 +73,8 @@ import org.eclipse.jetty.util.resource.ResourceCollection;
 import org.eclipse.jetty.webapp.WebAppClassLoader;
 import org.eclipse.jetty.webapp.WebAppContext;
 import org.jszip.jetty.JettyWebAppContext;
+import org.jszip.jetty.SystemProperties;
+import org.jszip.jetty.SystemProperty;
 
 import java.io.File;
 import java.io.IOException;
@@ -171,6 +173,16 @@ public class RunMojo extends AbstractJSZipMojo {
     private String[] runPackages;
 
     /**
+     * System properties to set before execution.
+     * Note that these properties will NOT override System properties
+     * that have been set on the command line or by the JVM. They WILL
+     * override System properties that have been set via systemPropertiesFile.
+     * Optional.
+     * @parameter
+     */
+    private SystemProperties systemProperties;
+
+    /**
      * @component
      * @required
      */
@@ -244,7 +256,6 @@ public class RunMojo extends AbstractJSZipMojo {
      * @required
      */
     protected MavenResourcesFiltering mavenResourcesFiltering;
-
 
     private final String scope = "test";
     private final long classpathCheckInterval = TimeUnit.SECONDS.toMillis(10);
@@ -919,6 +930,26 @@ public class RunMojo extends AbstractJSZipMojo {
         } catch (ArtifactResolutionException e) {
             throw new MojoExecutionException(e.getMessage(), e);
         }
+    }
+
+    public void setSystemProperties(SystemProperties systemProperties)
+    {
+        if (this.systemProperties == null)
+            this.systemProperties = systemProperties;
+        else
+        {
+            Iterator itor = systemProperties.getSystemProperties().iterator();
+            while (itor.hasNext())
+            {
+                SystemProperty prop = (SystemProperty)itor.next();
+                this.systemProperties.setSystemProperty(prop);
+            }
+        }
+    }
+
+    public SystemProperties getSystemProperties ()
+    {
+        return this.systemProperties;
     }
 
 

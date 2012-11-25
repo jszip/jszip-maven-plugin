@@ -25,6 +25,7 @@ import org.apache.maven.plugin.MojoExecution;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugin.descriptor.MojoDescriptor;
 import org.apache.maven.plugin.descriptor.PluginDescriptor;
+import org.apache.maven.plugins.annotations.Parameter;
 import org.apache.maven.project.MavenProject;
 import org.codehaus.plexus.configuration.PlexusConfiguration;
 import org.codehaus.plexus.util.StringUtils;
@@ -46,35 +47,23 @@ public abstract class AbstractJSZipMojo extends AbstractMojo {
 
     /**
      * The maven project.
-     *
-     * @parameter expression="${project}"
-     * @required
-     * @readonly
      */
+    @Parameter(property = "project", readonly = true, required = true)
     protected MavenProject project;
     /**
      * The current plugin.
-     *
-     * @parameter expression="${plugin.groupId}"
-     * @required
-     * @readonly
      */
+    @Parameter(property = "plugin.groupId", readonly = true, required = true)
     private String pluginGroupId;
     /**
      * The current plugin.
-     *
-     * @parameter expression="${plugin.artifactId}"
-     * @required
-     * @readonly
      */
+    @Parameter(property = "plugin.artifactId", readonly = true, required = true)
     private String pluginArtifactId;
     /**
      * The current plugin.
-     *
-     * @parameter expression="${plugin.version}"
-     * @required
-     * @readonly
      */
+    @Parameter(property = "plugin.version", readonly = true, required = true)
     private String pluginVersion;
 
     protected static <T> T invokeMethod(Object object, Class<T> rvClass, String method, Object... args)

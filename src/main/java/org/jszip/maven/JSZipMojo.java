@@ -22,6 +22,10 @@ import org.apache.maven.model.Developer;
 import org.apache.maven.model.License;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugin.MojoFailureException;
+import org.apache.maven.plugins.annotations.Component;
+import org.apache.maven.plugins.annotations.LifecyclePhase;
+import org.apache.maven.plugins.annotations.Mojo;
+import org.apache.maven.plugins.annotations.Parameter;
 import org.apache.maven.project.MavenProject;
 import org.apache.maven.project.MavenProjectHelper;
 import org.apache.maven.shared.artifact.filter.collection.ArtifactFilterException;
@@ -52,49 +56,38 @@ import java.util.TreeMap;
 
 /**
  * Produces a JSZip formatted zip file.
- *
- * @phase package
- * @goal jszip
  */
+@Mojo(name = "jszip", defaultPhase = LifecyclePhase.PACKAGE)
 public class JSZipMojo extends AbstractJSZipMojo {
 
     /**
      * Directory containing the classes.
-     *
-     * @parameter expression="src/main/js"
-     * @required
      */
+    @Parameter(defaultValue = "src/main/js", required = true)
     private File contentDirectory;
 
     /**
      * Directory containing the resources.
-     *
-     * @parameter expression="${project.build.outputDirectory}"
-     * @required
      */
+    @Parameter(defaultValue = "${project.build.outputDirectory}", required = true)
     private File resourcesDirectory;
 
     /**
      * Directory containing the generated ZIP.
-     *
-     * @parameter expression="${project.build.directory}"
-     * @required
      */
+    @Parameter(defaultValue = "${project.build.directory}", required = true)
     private File outputDirectory;
 
     /**
      * Name of the generated ZIP.
-     *
-     * @parameter expression="${zip.finalName}" default-value="${project.build.finalName}"
-     * @required
      */
+    @Parameter(property = "zip.finalName", defaultValue = "${project.build.finalName}", required = true)
     private String finalName;
 
     /**
      * Classifier to add to the artifact generated. If given, the artifact will be an attachment instead.
-     *
-     * @parameter
      */
+    @Parameter
     private String classifier;
 
     /**
@@ -102,35 +95,31 @@ public class JSZipMojo extends AbstractJSZipMojo {
      *
      * @component role="org.codehaus.plexus.archiver.Archiver" roleHint="zip"
      */
+    @Component(role = org.codehaus.plexus.archiver.Archiver.class, hint = "zip")
     private ZipArchiver zipArchiver;
 
     /**
      * Include or not empty directories
-     *
-     * @parameter expression="${zip.includeEmptyDirs}" default-value="false"
      */
+    @Parameter(property = "zip.includeEmptyDirs", defaultValue = "false")
     private boolean includeEmptyDirs;
 
     /**
      * Whether creating the archive should be forced.
-     *
-     * @parameter expression="${zip.forceCreation}" default-value="false"
      */
+    @Parameter(property = "zip.forceCreation", defaultValue = "false")
     private boolean forceCreation;
 
     /**
      * Adding pom.xml and pom.properties to the archive.
-     *
-     * @parameter expression="${addMavenDescriptor}" default-value="true"
      */
+    @Parameter(property = "zip.addMavenDescriptor", defaultValue = "true")
     private boolean addMavenDescriptor;
 
     /**
      * Maven ProjectHelper.
-     *
-     * @component
-     * @readonly
      */
+    @Component
     private MavenProjectHelper projectHelper;
 
     public File getContentDirectory() {

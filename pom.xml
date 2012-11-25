@@ -14,7 +14,8 @@
    See the License for the specific language governing permissions and
    limitations under the License.
 -->
-<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
   <modelVersion>4.0.0</modelVersion>
 
   <parent>
@@ -53,23 +54,34 @@
 
   <properties>
     <mavenArchiverVersion>2.5</mavenArchiverVersion>
-    <mavenFilteringVersion>1.0</mavenFilteringVersion>
-    <mavenInvokerVersion>2.0.11</mavenInvokerVersion>
+    <mavenFilteringVersion>1.1</mavenFilteringVersion>
+    <mavenInvokerVersion>2.1.1</mavenInvokerVersion>
     <mavenVersion>3.0.4</mavenVersion>
     <jettyVersion>8.1.1.v20120215</jettyVersion>
     <slf4jVersion>1.6.1</slf4jVersion>
   </properties>
 
   <dependencies>
+
+    <!-- jsr223 -->
+    <dependency>
+      <groupId>org.livetribe</groupId>
+      <artifactId>livetribe-jsr223</artifactId>
+      <version>2.0.6</version>
+    </dependency>
+
+    <!-- javascript engine -->
     <dependency>
       <groupId>org.mozilla</groupId>
       <artifactId>rhino</artifactId>
-      <version>1.7R3</version>
+      <version>1.7R4</version>
     </dependency>
+
+    <!-- javascript optimizer -->
     <dependency>
       <groupId>com.google.javascript</groupId>
       <artifactId>closure-compiler</artifactId>
-      <version>r1592</version>
+      <version>rr2079.1</version>
     </dependency>
 
     <!-- Maven dependencies -->
@@ -163,10 +175,18 @@
       <artifactId>plexus-container-default</artifactId>
       <version>1.0-alpha-9-stable-1</version>
     </dependency>
+    <!-- dependencies to annotations -->
+    <dependency>
+      <groupId>org.apache.maven.plugin-tools</groupId>
+      <artifactId>maven-plugin-annotations</artifactId>
+      <version>3.0</version>
+      <scope>compile</scope>
+    </dependency>
+    <!-- generated help mojo has a dependency to plexus-utils -->
     <dependency>
       <groupId>org.codehaus.plexus</groupId>
       <artifactId>plexus-utils</artifactId>
-      <version>3.0</version>
+      <version>3.0.1</version>
     </dependency>
     <dependency>
       <groupId>org.apache.maven.shared</groupId>
@@ -262,17 +282,17 @@
       <groupId>org.eclipse.jetty</groupId>
       <artifactId>jetty-annotations</artifactId>
       <version>${jettyVersion}</version>
-     </dependency>
-     <dependency>
-       <groupId>org.eclipse.jetty</groupId>
-       <artifactId>jetty-websocket</artifactId>
-       <version>${jettyVersion}</version>
-     </dependency>
-      <dependency>
-        <groupId>org.eclipse.jetty</groupId>
-        <artifactId>jetty-jsp</artifactId>
-        <version>${jettyVersion}</version>
-      </dependency>
+    </dependency>
+    <dependency>
+      <groupId>org.eclipse.jetty</groupId>
+      <artifactId>jetty-websocket</artifactId>
+      <version>${jettyVersion}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.eclipse.jetty</groupId>
+      <artifactId>jetty-jsp</artifactId>
+      <version>${jettyVersion}</version>
+    </dependency>
 
     <!-- slf4j dependencies -->
     <dependency>
@@ -291,12 +311,11 @@
       <version>${slf4jVersion}</version>
     </dependency>
 
-
     <!-- test dependencies -->
     <dependency>
       <groupId>junit</groupId>
       <artifactId>junit</artifactId>
-      <version>4.10</version>
+      <version>4.11</version>
       <scope>test</scope>
     </dependency>
 
@@ -314,12 +333,21 @@
       <plugins>
         <plugin>
           <artifactId>maven-invoker-plugin</artifactId>
-          <version>1.5</version>
+          <version>1.7</version>
         </plugin>
         <plugin>
           <artifactId>maven-plugin-plugin</artifactId>
-          <version>2.9</version>
+          <version>3.2</version>
+          <configuration>
+            <skipErrorNoDescriptorsFound>true</skipErrorNoDescriptorsFound>
+          </configuration>
           <executions>
+            <execution>
+              <id>mojo-descriptor</id>
+              <goals>
+                <goal>descriptor</goal>
+              </goals>
+            </execution>
             <execution>
               <id>help-mojo</id>
               <goals>
@@ -331,7 +359,7 @@
         <plugin>
           <groupId>org.codehaus.mojo</groupId>
           <artifactId>mrm-maven-plugin</artifactId>
-          <version>1.0-alpha-1</version>
+          <version>1.0-beta-1</version>
           <configuration>
             <propertyName>repository.proxy.url</propertyName>
           </configuration>

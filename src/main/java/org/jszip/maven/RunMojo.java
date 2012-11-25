@@ -37,6 +37,10 @@ import org.apache.maven.plugin.PluginConfigurationException;
 import org.apache.maven.plugin.PluginContainerException;
 import org.apache.maven.plugin.descriptor.MojoDescriptor;
 import org.apache.maven.plugin.descriptor.PluginDescriptor;
+import org.apache.maven.plugins.annotations.Component;
+import org.apache.maven.plugins.annotations.LifecyclePhase;
+import org.apache.maven.plugins.annotations.Parameter;
+import org.apache.maven.plugins.annotations.ResolutionScope;
 import org.apache.maven.project.DefaultProjectBuildingRequest;
 import org.apache.maven.project.DuplicateProjectException;
 import org.apache.maven.project.MavenProject;
@@ -95,54 +99,45 @@ import java.util.concurrent.TimeUnit;
  * if the poms are modified in such a way that the reactor build plan is modified, we have no choice but to stop the
  * servlet container and require the maven session to be restarted, but best effort is made to ensure that restart
  * is only when required.
- *
- * @goal run
- * @execute phase="test-compile"
- * @requiresDependencyResolution compile+runtime
  */
+@org.apache.maven.plugins.annotations.Mojo(name = "run",
+        defaultPhase = LifecyclePhase.TEST_COMPILE,
+        requiresDependencyResolution = ResolutionScope.COMPILE_PLUS_RUNTIME)
 public class RunMojo extends AbstractJSZipMojo {
     /**
      * If true, the &lt;testOutputDirectory&gt;
      * and the dependencies of &lt;scope&gt;test&lt;scope&gt;
      * will be put first on the runtime classpath.
-     *
-     * @parameter alias="useTestClasspath" default-value="false"
      */
+    @Parameter(alias = "useTextClasspath", defaultValue = "false")
     private boolean useTestScope;
 
 
     /**
      * The default location of the web.xml file. Will be used
      * if &lt;webApp&gt;&lt;descriptor&gt; is not set.
-     *
-     * @parameter expression="${maven.war.webxml}"
-     * @readonly
      */
+    @Parameter(property = "maven.war.webxml", readonly = true)
     private String webXml;
 
 
     /**
      * The directory containing generated classes.
-     *
-     * @parameter expression="${project.build.outputDirectory}"
-     * @required
      */
+    @Parameter(property = "project.build.outputDirectory", required = true)
     private File classesDirectory;
 
 
     /**
      * The directory containing generated test classes.
-     *
-     * @parameter expression="${project.build.testOutputDirectory}"
-     * @required
      */
+    @Parameter(property = "project.build.testOutputDirectory", required = true)
     private File testClassesDirectory;
 
     /**
      * Root directory for all html/jsp etc files
-     *
-     * @parameter expression="${maven.war.src}"
      */
+    @Parameter(property = "maven.war.src")
     private File webAppSourceDirectory;
 
 
@@ -152,24 +147,21 @@ public class RunMojo extends AbstractJSZipMojo {
      * override this default port number by using the system property jetty.port
      * on the command line, eg:  mvn -Djetty.port=9999 jetty:run. Consider using instead
      * the &lt;jettyXml&gt; element to specify external jetty xml config file.
-     *
-     * @parameter
      */
+    @Parameter
     protected Connector[] connectors;
 
     /**
      * The module that the goal should apply to. Specify either groupId:artifactId or just plain artifactId.
-     *
-     * @parameter expression="${jszip.run.module}"
      */
+    @Parameter(property = "jszip.run.module")
     private String runModule;
 
     /**
      * List of the packaging types will be considered for executing this goal. Normally you do not
      * need to configure this parameter unless you have a custom war packaging type. Defaults to <code>war</code>
-     *
-     * @parameter
      */
+    @Parameter
     private String[] runPackages;
 
     /**
@@ -178,83 +170,68 @@ public class RunMojo extends AbstractJSZipMojo {
      * that have been set on the command line or by the JVM. They WILL
      * override System properties that have been set via systemPropertiesFile.
      * Optional.
-     * @parameter
      */
+    @Parameter
     private SystemProperties systemProperties;
 
     /**
-     * @component
-     * @required
+     * The project builder
      */
+    @Component
     private ProjectBuilder projectBuilder;
 
     /**
-     * @parameter expression="${reactorProjects}"
-     * @required
-     * @readonly
+     * The reactor project
      */
+    @Parameter(property = "reactorProjects", required = true, readonly = true)
     protected List<MavenProject> reactorProjects;
 
     /**
      * Location of the local repository.
-     *
-     * @parameter expression="${localRepository}"
-     * @readonly
-     * @required
      */
+    @Parameter(property = "localRepository", required = true, readonly = true)
     private ArtifactRepository localRepository;
 
     /**
      * The current build session instance. This is used for plugin manager API calls.
-     *
-     * @parameter expression="${session}"
-     * @required
-     * @readonly
      */
+    @Parameter(property = "session", required = true, readonly = true)
     private MavenSession session;
 
     /**
      * The forked project.
-     *
-     * @parameter expression="${executedProject}"
-     * @required
-     * @readonly
      */
+    @Parameter(property = "executedProject", required = true, readonly = true)
     private MavenProject executedProject;
 
     /**
      * Used to resolve transitive dependencies.
-     *
-     * @component
      */
+    @Component
     private ProjectDependenciesResolver projectDependenciesResolver;
 
     /**
      * Maven ProjectHelper.
-     *
-     * @component
-     * @readonly
      */
+    @Component
     private MavenProjectHelper projectHelper;
 
     /**
      * The Maven plugin Manager
-     *
-     * @component
-     * @readonly
-     * @required
      */
+    @Component
     private MavenPluginManager mavenPluginManager;
 
     /**
-     * @parameter expression="${plugin}"
-     * @readonly
+     * This plugin's descriptor
      */
+    @Parameter(property = "plugin")
     private PluginDescriptor pluginDescriptor;
+
     /**
-     * @component role="org.apache.maven.shared.filtering.MavenResourcesFiltering" role-hint="default"
-     * @required
+     * Our resource filterer
      */
+    @Component(role = org.apache.maven.shared.filtering.MavenResourcesFiltering.class, hint = "default")
     protected MavenResourcesFiltering mavenResourcesFiltering;
 
     private final String scope = "test";
@@ -679,11 +656,13 @@ public class RunMojo extends AbstractJSZipMojo {
                 long dirLastModified = recursiveLastModified(dir);
                 if (lastModified < dirLastModified) {
                     changed = true;
-                    if (r.isFiltering()) changedFiltered = true;
+                    if (r.isFiltering()) {
+                        changedFiltered = true;
+                    }
                 }
             }
             if (changedFiltered) {
-                getLog().info("Detected change in resources of " + ArtifactUtils.versionlessKey(a)+"...");
+                getLog().info("Detected change in resources of " + ArtifactUtils.versionlessKey(a) + "...");
                 getLog().debug("Resource filtering is used by project, invoking Maven to handle update");
                 // need to let Maven handle it as its the only (although slower) safe way to do it right with filters
                 InvocationRequest request = new DefaultInvocationRequest();
@@ -702,10 +681,13 @@ public class RunMojo extends AbstractJSZipMojo {
                     getLog().info(e);
                 }
             } else if (changed) {
-                getLog().info("Detected change in resources of " + ArtifactUtils.versionlessKey(a)+"...");
+                getLog().info("Detected change in resources of " + ArtifactUtils.versionlessKey(a) + "...");
                 getLog().debug("Resource filtering is not used by project, handling update ourselves");
                 // can do it fast ourselves
-                MavenResourcesExecution mavenResourcesExecution = new MavenResourcesExecution(p.getResources(), new File(p.getBuild().getOutputDirectory()), p, p.getProperties().getProperty("project.build.sourceEncoding"), Collections.emptyList(), Collections.emptyList(), session);
+                MavenResourcesExecution mavenResourcesExecution =
+                        new MavenResourcesExecution(p.getResources(), new File(p.getBuild().getOutputDirectory()), p,
+                                p.getProperties().getProperty("project.build.sourceEncoding"), Collections.emptyList(),
+                                Collections.<String>emptyList(), session);
                 try {
                     mavenResourcesFiltering.filterResources(mavenResourcesExecution);
                     newLastModified = System.currentTimeMillis();
@@ -932,23 +914,19 @@ public class RunMojo extends AbstractJSZipMojo {
         }
     }
 
-    public void setSystemProperties(SystemProperties systemProperties)
-    {
-        if (this.systemProperties == null)
+    public void setSystemProperties(SystemProperties systemProperties) {
+        if (this.systemProperties == null) {
             this.systemProperties = systemProperties;
-        else
-        {
+        } else {
             Iterator itor = systemProperties.getSystemProperties().iterator();
-            while (itor.hasNext())
-            {
-                SystemProperty prop = (SystemProperty)itor.next();
+            while (itor.hasNext()) {
+                SystemProperty prop = (SystemProperty) itor.next();
                 this.systemProperties.setSystemProperty(prop);
             }
         }
     }
 
-    public SystemProperties getSystemProperties ()
-    {
+    public SystemProperties getSystemProperties() {
         return this.systemProperties;
     }
 

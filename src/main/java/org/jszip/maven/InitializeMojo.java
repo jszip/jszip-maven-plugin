@@ -19,6 +19,10 @@ package org.jszip.maven;
 import org.apache.maven.artifact.Artifact;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugin.MojoFailureException;
+import org.apache.maven.plugins.annotations.Component;
+import org.apache.maven.plugins.annotations.LifecyclePhase;
+import org.apache.maven.plugins.annotations.Mojo;
+import org.apache.maven.plugins.annotations.Parameter;
 import org.apache.maven.project.MavenProjectHelper;
 import org.codehaus.plexus.util.StringUtils;
 
@@ -26,33 +30,26 @@ import java.io.File;
 
 /**
  * Initializes the JSZIP artifact.
- *
- * @phase compile
- * @goal initialize
  */
+@Mojo(name = "initialize", defaultPhase = LifecyclePhase.COMPILE)
 public class InitializeMojo extends AbstractJSZipMojo {
 
     /**
      * Directory containing the classes.
-     *
-     * @parameter expression="src/main/js"
-     * @required
      */
+    @Parameter(defaultValue = "src/main/js", required = true)
     private File contentDirectory;
 
     /**
      * Classifier to add to the artifact generated. If given, the artifact will be an attachment instead.
-     *
-     * @parameter
      */
+    @Parameter
     private String classifier;
 
     /**
      * Maven ProjectHelper.
-     *
-     * @component
-     * @readonly
      */
+    @Component
     private MavenProjectHelper projectHelper;
 
     /**

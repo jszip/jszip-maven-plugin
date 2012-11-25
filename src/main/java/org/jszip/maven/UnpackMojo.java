@@ -21,7 +21,6 @@ import org.apache.maven.artifact.ArtifactUtils;
 import org.apache.maven.execution.MavenSession;
 import org.apache.maven.model.Plugin;
 import org.apache.maven.model.PluginExecution;
-import org.apache.maven.plugin.InvalidPluginDescriptorException;
 import org.apache.maven.plugin.MavenPluginManager;
 import org.apache.maven.plugin.Mojo;
 import org.apache.maven.plugin.MojoExecution;
@@ -29,10 +28,12 @@ import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugin.MojoFailureException;
 import org.apache.maven.plugin.PluginConfigurationException;
 import org.apache.maven.plugin.PluginContainerException;
-import org.apache.maven.plugin.PluginDescriptorParsingException;
-import org.apache.maven.plugin.PluginResolutionException;
 import org.apache.maven.plugin.descriptor.MojoDescriptor;
 import org.apache.maven.plugin.descriptor.PluginDescriptor;
+import org.apache.maven.plugins.annotations.Component;
+import org.apache.maven.plugins.annotations.LifecyclePhase;
+import org.apache.maven.plugins.annotations.Parameter;
+import org.apache.maven.plugins.annotations.ResolutionScope;
 import org.apache.maven.project.MavenProject;
 import org.apache.maven.shared.artifact.filter.collection.ArtifactFilterException;
 import org.apache.maven.shared.artifact.filter.collection.FilterArtifacts;
@@ -44,7 +45,6 @@ import org.codehaus.plexus.archiver.zip.ZipUnArchiver;
 import org.codehaus.plexus.components.io.fileselectors.IncludeExcludeFileSelector;
 import org.codehaus.plexus.util.FileUtils;
 import org.codehaus.plexus.util.StringUtils;
-import org.sonatype.aether.repository.RemoteRepository;
 
 import java.io.File;
 import java.io.IOException;
@@ -53,57 +53,47 @@ import java.util.Set;
 
 /**
  * Unpacks all the JSZip dependencies into a web application.
- *
- * @phase generate-resources
- * @goal unpack
- * @requiresDependencyResolution compile+runtime
  */
+@org.apache.maven.plugins.annotations.Mojo(name = "unpack",
+        defaultPhase = LifecyclePhase.GENERATE_RESOURCES,
+        requiresDependencyResolution = ResolutionScope.COMPILE_PLUS_RUNTIME
+)
 public class UnpackMojo extends AbstractJSZipMojo {
 
     /**
      * The directory where the webapp is built.
-     *
-     * @parameter expression="${project.build.directory}/${project.build.finalName}"
-     * @required
      */
+    @Parameter(defaultValue = "${project.build.directory}/${project.build.finalName}", required = true)
     private File webappDirectory;
 
     /**
      * The Zip unarchiver.
-     *
-     * @component role="org.codehaus.plexus.archiver.UnArchiver" roleHint="zip"
      */
+    @Component(role = org.codehaus.plexus.archiver.UnArchiver.class, hint = "zip")
     private ZipUnArchiver zipUnArchiver;
 
     /**
-     * @parameter expression="${reactorProjects}"
-     * @required
-     * @readonly
+     * The reactor projects
      */
+    @Parameter(property = "reactorProjects", required = true, readonly = true)
     protected List<MavenProject> reactorProjects;
 
     /**
      * The Maven plugin Manager
-     *
-     * @component
-     * @readonly
-     * @required
      */
+    @Component
     private MavenPluginManager mavenPluginManager;
 
     /**
      * The current build session instance. This is used for plugin manager API calls.
-     *
-     * @parameter expression="${session}"
-     * @required
-     * @readonly
      */
+    @Parameter(property = "session", required = true, readonly = true)
     private MavenSession session;
 
     /**
-     * @parameter expression="${plugin}"
-     * @readonly
+     * This plugin's descriptor
      */
+    @Parameter(property = "plugin", readonly = true)
     private PluginDescriptor pluginDescriptor;
 
     /**
@@ -156,7 +146,7 @@ public class UnpackMojo extends AbstractJSZipMojo {
                         }
                         MojoExecution mojoExecution =
                                 createMojoExecution(plugin, pluginExecution, jszipDescriptor);
-                        JSZipMojo mojo = (JSZipMojo)mavenPluginManager
+                        JSZipMojo mojo = (JSZipMojo) mavenPluginManager
                                 .getConfiguredMojo(Mojo.class, session, mojoExecution);
                         try {
                             File contentDirectory = mojo.getContentDirectory();

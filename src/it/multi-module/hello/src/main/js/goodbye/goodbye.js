@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
-require(['hello/hello'], function(Hello) {
-  window.alert(Hello.sayHello());
-});
+define({
+    sayGoodbye:function () {
+        return "Goodbye cruel world!"
+    }
+})

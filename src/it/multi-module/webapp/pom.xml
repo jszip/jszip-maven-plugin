@@ -44,6 +44,7 @@
           <execution>
             <goals>
               <goal>unpack</goal>
+              <goal>optimize</goal>
             </goals>
           </execution>
         </executions>

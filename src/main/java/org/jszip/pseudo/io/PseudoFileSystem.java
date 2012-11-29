@@ -153,11 +153,17 @@ public class PseudoFileSystem {
 
         @Override
         public PseudoFile makeChild(PseudoFile parent, String name) {
-            String relativePath = parent.getAbsolutePath() + "/" + name;
+            String relativePath = StringUtils.removeEnd(parent.getAbsolutePath(),"/") + "/" + name;
             if (relativePath.startsWith(prefix)) {
                 return new FilePseudoFile(parent, new File(root, relativePath.substring(prefix.length())));
             }
-            return new VirtualDirectoryPseudoFile(parent, name);
+            if (prefix.equals(relativePath)) {
+                return new FilePseudoFile(parent, root);
+            }
+            if (!StringUtils.isEmpty(prefix) && prefix.startsWith(relativePath)) {
+                return new VirtualDirectoryPseudoFile(parent, name);
+            }
+            return new NotExistingPseudoFile(parent, name);
         }
 
         @Override
@@ -219,12 +225,15 @@ public class PseudoFileSystem {
 
         @Override
         public PseudoFile makeChild(PseudoFile parent, String name) {
-            String relativePath = parent.getAbsolutePath() + "/" + name;
+            String relativePath = StringUtils.removeEnd(parent.getAbsolutePath(),"/") + "/" + name;
             final ZipEntry entry = contents.get(relativePath);
             if (entry != null) {
                 return new ZipPseudoFile(parent, zipFile, entry);
             }
-            return new VirtualDirectoryPseudoFile(parent, name);
+            if (!StringUtils.isEmpty(prefix) && prefix.startsWith(relativePath)) {
+                return new VirtualDirectoryPseudoFile(parent, name);
+            }
+            return new NotExistingPseudoFile(parent, name);
         }
 
         @Override

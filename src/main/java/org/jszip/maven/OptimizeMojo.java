@@ -43,9 +43,11 @@ import org.apache.maven.shared.artifact.filter.collection.TypeFilter;
 import org.codehaus.plexus.util.DirectoryScanner;
 import org.codehaus.plexus.util.IOUtil;
 import org.jszip.pseudo.io.PseudoFileSystem;
+import org.jszip.rhino.JavaScriptTerminationException;
 import org.jszip.rhino.OptimizeContextAction;
 import org.mozilla.javascript.Context;
 import org.mozilla.javascript.ContextFactory;
+import org.mozilla.javascript.JavaScriptException;
 import org.mozilla.javascript.tools.shell.Global;
 import org.mozilla.javascript.tools.shell.QuitAction;
 import org.mozilla.javascript.tools.shell.ShellContextFactory;
@@ -216,7 +218,7 @@ public class OptimizeMojo extends AbstractJSZipMojo {
         global.initQuitAction(new QuitAction() {
             public void quit(Context context, int exitCode) {
                 if (exitCode != 0) {
-                    throw new RuntimeException("Script exited with exit code of " + exitCode);
+                    throw new JavaScriptTerminationException("Script exited with exit code of " + exitCode, exitCode);
                 }
             }
         });
@@ -242,7 +244,16 @@ public class OptimizeMojo extends AbstractJSZipMojo {
             File profileJs = new File(contentDirectory, path);
             PseudoFileSystem.Layer[] layersArray = layers.toArray(new PseudoFileSystem.Layer[layers.size() + 1]);
             layersArray[layers.size()] = new PseudoFileSystem.FileLayer("build", profileJs.getParentFile());
-            contextFactory.call(new OptimizeContextAction(getLog(), global, profileJs, source, lineNo, layersArray));
+            try {
+                contextFactory
+                        .call(new OptimizeContextAction(getLog(), global, profileJs, source, lineNo, layersArray));
+            } catch (JavaScriptException e) {
+                throw new MojoExecutionException(
+                        "Uncaught exception when trying to optimize profile " + profileJs, e);
+            } catch (JavaScriptTerminationException e) {
+                throw new MojoExecutionException(
+                        "Non-zero exit code of " + e.getExitCode() + " when trying to optimize profile " + profileJs);
+            }
         }
     }
 

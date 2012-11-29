@@ -51,12 +51,15 @@ import org.mozilla.javascript.tools.shell.QuitAction;
 import org.mozilla.javascript.tools.shell.ShellContextFactory;
 
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Runs the r.js optimizer over the source
@@ -86,8 +89,8 @@ public class OptimizeMojo extends AbstractJSZipMojo {
     /**
      * Directory containing the build profiles.
      */
-    @Parameter(defaultValue = "${project.build.directory}/r.js", required = true)
-    private File workDirectory;
+    @Parameter(defaultValue = "src/build/js/r.js")
+    private File customRScript;
 
     /**
      * Skip optimization.
@@ -120,6 +123,19 @@ public class OptimizeMojo extends AbstractJSZipMojo {
     private PluginDescriptor pluginDescriptor;
 
     /**
+     * A list of &lt;include&gt; elements specifying the build profiles (by pattern) that should be included in optimization.
+     */
+    @Parameter(property = "includes")
+    private List<String> includes;
+
+    /**
+     * A list of &lt;exclude&gt; elements specifying the build profiles (by pattern) that should be excluded from
+     * optimization.
+     */
+    @Parameter(property = "excludes")
+    private List<String> excludes;
+
+    /**
      * @see org.apache.maven.plugin.Mojo#execute()
      */
     public void execute() throws MojoExecutionException, MojoFailureException {
@@ -145,7 +161,13 @@ public class OptimizeMojo extends AbstractJSZipMojo {
         InputStream inputStream = null;
         InputStreamReader reader = null;
         try {
-            inputStream = getClass().getResourceAsStream("/org/jszip/maven/r.js");
+            if (customRScript.isFile()) {
+                getLog().debug("Using custom r.js from: " + customRScript);
+                inputStream = new FileInputStream(customRScript);
+            } else {
+                getLog().debug("Using bundled r.js");
+                inputStream = getClass().getResourceAsStream("/org/jszip/maven/r.js");
+            }
             source = IOUtil.toString(inputStream, "UTF-8");
             if (source.startsWith("#!")) {
                 int i1 = source.indexOf('\n');
@@ -162,6 +184,15 @@ public class OptimizeMojo extends AbstractJSZipMojo {
             IOUtil.close(reader);
             IOUtil.close(inputStream);
         }
+
+        String sourceVersion = "unknown";
+        Pattern rJsVersionPattern = Pattern.compile("\\s+version\\s*=\\s*('([^\\\\']+|\\\\([btnfr\"'\\\\]|[0-3]?[0-7]{1,2}|u[0-9a-fA-F]{4}))*'|\"([^\\\\\"]+|\\\\([btnfr\"'\\\\]|[0-3]?[0-7]{1,2}|u[0-9a-fA-F]{4}))*\")");
+        Matcher rJsVersionMatcher = rJsVersionPattern.matcher(source);
+        if (rJsVersionMatcher.find()) {
+            sourceVersion = rJsVersionMatcher.group(1);
+        }
+
+        getLog().info("Using r.js version " + sourceVersion);
 
         List<PseudoFileSystem.Layer> layers = buildVirtualFileSystemLayers();
 

@@ -16,10 +16,11 @@
 
 package org.jszip.rhino;
 
+import org.apache.commons.lang3.StringUtils;
 import org.apache.maven.plugin.logging.Log;
-import org.codehaus.plexus.util.StringUtils;
-import org.jszip.pseudo.io.PseudoFile;
+import org.codehaus.plexus.util.FileUtils;
 import org.jszip.pseudo.io.ProxyPseudoFile;
+import org.jszip.pseudo.io.PseudoFile;
 import org.jszip.pseudo.io.PseudoFileInputStream;
 import org.jszip.pseudo.io.PseudoFileOutputStream;
 import org.jszip.pseudo.io.PseudoFileSystem;
@@ -31,11 +32,15 @@ import org.mozilla.javascript.NativeJavaTopPackage;
 import org.mozilla.javascript.Script;
 import org.mozilla.javascript.Scriptable;
 import org.mozilla.javascript.ScriptableObject;
+import org.mozilla.javascript.UniqueTag;
 import org.mozilla.javascript.tools.shell.Global;
 
 import java.io.File;
+import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Stack;
 
 /**
@@ -85,13 +90,47 @@ public class OptimizeContextAction extends ScriptableObject implements ContextAc
                 }
             }
 
+            List<String> argsList = new ArrayList<String>();
+            argsList.add("-o");
+            argsList.add("/build/" + profileJs.getName());
+            String appDir = null;
+            String baseUrl = "./";
+            String dir = null;
+            try {
+                String profile = FileUtils.fileRead(profileJs, "UTF-8");
+                Scriptable scope = context.newObject(global);
+                scope.setPrototype(global);
+                scope.setParentScope(null);
+                Object parsedProfile = context.evaluateString(scope, profile, profileJs.getName(), 0, null);
+                if (parsedProfile instanceof Scriptable) {
+                    final Scriptable scriptable = (Scriptable) parsedProfile;
+                    appDir = getStringWithDefault(scriptable, "appDir", null);
+                    baseUrl = getStringWithDefault(scriptable, "baseUrl", "./");
+                    dir = getStringWithDefault(scriptable, "dir", null);
+
+                }
+            } catch (IOException e) {
+                log.debug("Cannot infer profile fixups", e);
+            }
+            if (appDir == null) {
+                argsList.add("appDir=/virtual");
+                argsList.add("baseUrl=" + baseUrl);
+            } else if (!appDir.startsWith("/virtual/") && !appDir.equals("/virtual")) {
+                argsList.add("appDir=/virtual/" + StringUtils.removeStart(appDir, "/"));
+                argsList.add("baseUrl=" + baseUrl);
+            }
+            if (dir == null) {
+                argsList.add("dir=/target");
+            } else if (!dir.startsWith("/target/") && !dir.equals("/target")) {
+                argsList.add("dir=/target/" + StringUtils.removeStart(dir, "/"));
+            }
+
             global.defineFunctionProperties(new String[]{"print"}, OptimizeContextAction.class,
                     ScriptableObject.DONTENUM);
 
             Script script = context.compileString(source, "r.js", lineNo, null);
 
-            Scriptable argsObj = context.newArray(global,
-                    new Object[]{"-o", "/build/" + profileJs.getName()});
+            Scriptable argsObj = context.newArray(global, argsList.toArray());
             global.defineProperty("arguments", argsObj, ScriptableObject.DONTENUM);
 
             Scriptable scope = context.newObject(global);
@@ -114,12 +153,28 @@ public class OptimizeContextAction extends ScriptableObject implements ContextAc
 
             if (script != null) {
                 log.info("Applying r.js profile " + profileJs.getPath());
+                log.debug("Executing r.js with arguments: " + StringUtils.join(argsList, " "));
                 return script.exec(context, scope);
             }
             return null;
         } finally {
             fileSystem.removeFromContext();
             context.putThreadLocal(OptimizeContextAction.class, null);
+        }
+    }
+
+    private String getStringWithDefault(Scriptable scriptable, String name, String defaultValue) {
+        final Object object = scriptable.get(name, scriptable);
+        if (object instanceof String) {
+            return (String) object;
+        }
+        if (object instanceof UniqueTag) {
+            if (object == UniqueTag.NULL_VALUE) {
+                return null;
+            }
+            return defaultValue;
+        } else {
+            return object.toString();
         }
     }
 

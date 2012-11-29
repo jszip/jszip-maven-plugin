@@ -1,7 +1,5 @@
 ({
-    appDir:"/virtual",
-    dir:"/target",
-    baseUrl:".",
+    baseUrl:"./",
     optimize: "closure",
     modules:[
         {

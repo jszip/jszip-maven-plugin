@@ -40,9 +40,9 @@ import org.apache.maven.shared.artifact.filter.collection.FilterArtifacts;
 import org.apache.maven.shared.artifact.filter.collection.ProjectTransitivityFilter;
 import org.apache.maven.shared.artifact.filter.collection.ScopeFilter;
 import org.apache.maven.shared.artifact.filter.collection.TypeFilter;
+import org.codehaus.plexus.util.DirectoryScanner;
 import org.codehaus.plexus.util.IOUtil;
 import org.jszip.pseudo.io.PseudoFileSystem;
-import org.jszip.rhino.JavaScriptFilenameFilter;
 import org.jszip.rhino.OptimizeContextAction;
 import org.mozilla.javascript.Context;
 import org.mozilla.javascript.ContextFactory;
@@ -56,6 +56,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Set;
 import java.util.regex.Matcher;
@@ -68,6 +69,16 @@ import java.util.regex.Pattern;
         requiresDependencyResolution = ResolutionScope.COMPILE_PLUS_RUNTIME)
 public class OptimizeMojo extends AbstractJSZipMojo {
 
+    /**
+     * Regex for a quoted string which may include escapes.
+     */
+    public static final String QUOTED_STRING_WITH_ESCAPES = "'([^\\\\']+|\\\\([btnfr\"'\\\\]|[0-3]?[0-7]{1,"
+            + "2}|u[0-9a-fA-F]{4}))*'|\"([^\\\\\"]+|\\\\([btnfr\"'\\\\]|[0-3]?[0-7]{1,2}|u[0-9a-fA-F]{4}))*\"";
+
+    /**
+     * Regex for sniffing the version of r.js being used.
+     */
+    public static final String R_JS_VERSION_REGEX = "\\s+version\\s*=\\s*(" + QUOTED_STRING_WITH_ESCAPES + ")";
     /**
      * Directory containing the build profiles.
      */
@@ -123,7 +134,8 @@ public class OptimizeMojo extends AbstractJSZipMojo {
     private PluginDescriptor pluginDescriptor;
 
     /**
-     * A list of &lt;include&gt; elements specifying the build profiles (by pattern) that should be included in optimization.
+     * A list of &lt;include&gt; elements specifying the build profiles (by pattern) that should be included in
+     * optimization.
      */
     @Parameter(property = "includes")
     private List<String> includes;
@@ -186,7 +198,7 @@ public class OptimizeMojo extends AbstractJSZipMojo {
         }
 
         String sourceVersion = "unknown";
-        Pattern rJsVersionPattern = Pattern.compile("\\s+version\\s*=\\s*('([^\\\\']+|\\\\([btnfr\"'\\\\]|[0-3]?[0-7]{1,2}|u[0-9a-fA-F]{4}))*'|\"([^\\\\\"]+|\\\\([btnfr\"'\\\\]|[0-3]?[0-7]{1,2}|u[0-9a-fA-F]{4}))*\")");
+        Pattern rJsVersionPattern = Pattern.compile(R_JS_VERSION_REGEX);
         Matcher rJsVersionMatcher = rJsVersionPattern.matcher(source);
         if (rJsVersionMatcher.find()) {
             sourceVersion = rJsVersionMatcher.group(1);
@@ -208,7 +220,26 @@ public class OptimizeMojo extends AbstractJSZipMojo {
                 }
             }
         });
-        for (final File profileJs : contentDirectory.listFiles(new JavaScriptFilenameFilter())) {
+        DirectoryScanner scanner = new DirectoryScanner();
+
+        scanner.setBasedir(contentDirectory);
+
+        if (includes != null && !includes.isEmpty()) {
+            scanner.setIncludes(processIncludesExcludes(includes));
+        } else {
+            scanner.setIncludes(new String[]{"**/*.js"});
+        }
+
+        if (excludes != null && !excludes.isEmpty()) {
+            scanner.setExcludes(processIncludesExcludes(excludes));
+        } else {
+            scanner.setExcludes(new String[]{"r.js"});
+        }
+
+        scanner.scan();
+
+        for (String path : scanner.getIncludedFiles()) {
+            File profileJs = new File(contentDirectory, path);
             PseudoFileSystem.Layer[] layersArray = layers.toArray(new PseudoFileSystem.Layer[layers.size() + 1]);
             layersArray[layers.size()] = new PseudoFileSystem.FileLayer("build", profileJs.getParentFile());
             contextFactory.call(new OptimizeContextAction(getLog(), global, profileJs, source, lineNo, layersArray));
@@ -284,7 +315,7 @@ public class OptimizeMojo extends AbstractJSZipMojo {
                 }
             } else {
                 try {
-                    getLog().debug("Merging .zip file " + contentDirectory + " into /virtual");
+                    getLog().debug("Merging .zip file " + file + " into /virtual");
                     layers.add(new PseudoFileSystem.ZipLayer("/virtual", file));
                 } catch (IOException e) {
                     throw new MojoExecutionException(e.getMessage(), e);
@@ -292,6 +323,15 @@ public class OptimizeMojo extends AbstractJSZipMojo {
             }
         }
         return layers;
+    }
+
+    private static String[] processIncludesExcludes(List<String> list) {
+        List<String> result = new ArrayList<String>();
+        for (String entry : list) {
+            String[] entries = entry.split(",");
+            Collections.addAll(result, entries);
+        }
+        return result.toArray(new String[result.size()]);
     }
 
 }

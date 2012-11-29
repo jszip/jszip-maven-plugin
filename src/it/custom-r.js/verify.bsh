@@ -1,0 +1,18 @@
+import java.io.*;
+import org.codehaus.plexus.util.FileUtils;
+
+try {
+    File file = new File( basedir, "build.log" );
+    String buf = FileUtils.fileRead( file );
+
+    if ( !buf.toString().contains( "Using r.js version \'1.0.0\'" ) ) {
+        System.out.println( "Did not use custom r.js" );
+        return false;
+    }
+} catch( Throwable t ) {
+    t.printStackTrace();
+    return false;
+}
+
+
+return true;

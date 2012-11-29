@@ -212,9 +212,6 @@ public class OptimizeMojo extends AbstractJSZipMojo {
 
         final ContextFactory contextFactory = new ShellContextFactory();
         final Global global = new Global();
-        if (!global.isInitialized()) {
-            global.init(contextFactory);
-        }
         global.initQuitAction(new QuitAction() {
             public void quit(Context context, int exitCode) {
                 if (exitCode != 0) {
@@ -222,6 +219,9 @@ public class OptimizeMojo extends AbstractJSZipMojo {
                 }
             }
         });
+        if (!global.isInitialized()) {
+            global.init(contextFactory);
+        }
         DirectoryScanner scanner = new DirectoryScanner();
 
         scanner.setBasedir(contentDirectory);
@@ -245,8 +245,15 @@ public class OptimizeMojo extends AbstractJSZipMojo {
             PseudoFileSystem.Layer[] layersArray = layers.toArray(new PseudoFileSystem.Layer[layers.size() + 1]);
             layersArray[layers.size()] = new PseudoFileSystem.FileLayer("build", profileJs.getParentFile());
             try {
-                contextFactory
+                Object rv = contextFactory
                         .call(new OptimizeContextAction(getLog(), global, profileJs, source, lineNo, layersArray));
+                if (rv instanceof Number) {
+                    if (((Number) rv).intValue() != 0) {
+                        throw new MojoExecutionException(
+                                "Non-zero exit code of " + ((Number) rv).intValue()
+                                        + " when trying to optimize profile " + profileJs);
+                    }
+                }
             } catch (JavaScriptException e) {
                 throw new MojoExecutionException(
                         "Uncaught exception when trying to optimize profile " + profileJs, e);

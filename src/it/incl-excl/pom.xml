@@ -22,7 +22,7 @@
   <version>1.0-SNAPSHOT</version>
   <packaging>pom</packaging>
   <name>smokes</name>
-  <description>Basic smoke test of multi-module</description>
+  <description>Test inclusion/exclusion of profiles for the optimize goal</description>
 
   <modules>
     <module>hello</module>

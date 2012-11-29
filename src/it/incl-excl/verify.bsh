@@ -1,0 +1,18 @@
+import java.io.*;
+import org.codehaus.plexus.util.FileUtils;
+
+try {
+    if (!new File( basedir, "webapp/target/webapp-1.0-SNAPSHOT/sub/main.js" ).isFile()) {
+        System.out.println("Did not run profile2.js");
+        return false;
+    }
+    if (new File( basedir, "webapp/target/webapp-1.0-SNAPSHOT/foo/main.js" ).isFile()) {
+        System.out.println("Did run profile.js");
+        return false;
+    }
+} catch( Throwable t ) {
+    t.printStackTrace();
+    return false;
+}
+
+return true;

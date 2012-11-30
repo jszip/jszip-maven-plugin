@@ -118,16 +118,16 @@ public class OptimizeContextAction extends ScriptableObject implements ContextAc
                 log.warn("Cannot infer if profile needs appDir and dir remapping to virtual directory structure", e);
             }
             if (appDir == null) {
-                argsList.add("appDir=/virtual");
+                argsList.add("appDir=/virtual/");
                 argsList.add("baseUrl=" + baseUrl);
             } else if (!appDir.startsWith("/virtual/") && !appDir.equals("/virtual")) {
-                argsList.add("appDir=/virtual/" + StringUtils.removeStart(appDir, "/"));
+                argsList.add("appDir=/virtual/" + StringUtils.removeEnd(StringUtils.removeStart(appDir, "/"),"/")+"/");
                 argsList.add("baseUrl=" + baseUrl);
             }
             if (dir == null) {
-                argsList.add("dir=/target");
+                argsList.add("dir=/target/");
             } else if (!dir.startsWith("/target/") && !dir.equals("/target")) {
-                argsList.add("dir=/target/" + StringUtils.removeStart(dir, "/"));
+                argsList.add("dir=/target/" + StringUtils.removeEnd(StringUtils.removeStart(dir, "/"),"/")+"/");
             }
 
             global.defineFunctionProperties(new String[]{"print", "quit"}, OptimizeContextAction.class,

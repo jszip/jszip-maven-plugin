@@ -266,8 +266,8 @@ public class OptimizeMojo extends AbstractJSZipMojo {
 
     private List<PseudoFileSystem.Layer> buildVirtualFileSystemLayers() throws MojoExecutionException {
         List<PseudoFileSystem.Layer> layers = new ArrayList<PseudoFileSystem.Layer>();
-        layers.add(new PseudoFileSystem.FileLayer("target", webappDirectory));
-        layers.add(new PseudoFileSystem.FileLayer("virtual", warSourceDirectory));
+        layers.add(new PseudoFileSystem.FileLayer("/target", webappDirectory));
+        layers.add(new PseudoFileSystem.FileLayer("/virtual", warSourceDirectory));
         FilterArtifacts filter = new FilterArtifacts();
 
         filter.addFilter(new ProjectTransitivityFilter(project.getDependencyArtifacts(), false));

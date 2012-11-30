@@ -27,8 +27,10 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Enumeration;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeMap;
 
 public class PseudoFileSystem {
@@ -139,7 +141,8 @@ public class PseudoFileSystem {
         public List<String> listChildren(String relativePath) {
             relativePath = StringUtils.removeEnd(relativePath, "/") + "/";
             if (relativePath.startsWith(prefix)) {
-                final String[] list = new File(root, relativePath.substring(prefix.length())).list();
+                final String pathFragment = relativePath.substring(prefix.length());
+                final String[] list = new File(root, pathFragment).list();
                 return list == null ? Collections.<String>emptyList() : Arrays.asList(list);
             }
             if (prefix.startsWith(relativePath)) {
@@ -153,12 +156,14 @@ public class PseudoFileSystem {
 
         @Override
         public PseudoFile makeChild(PseudoFile parent, String name) {
-            String relativePath = StringUtils.removeEnd(parent.getAbsolutePath(),"/") + "/" + name;
+            String relativePath = StringUtils.removeEnd(parent.getAbsolutePath(), "/") + "/" + name;
             if (relativePath.startsWith(prefix)) {
                 return new FilePseudoFile(parent, new File(root, relativePath.substring(prefix.length())));
             }
-            if (prefix.equals(relativePath)) {
-                return new FilePseudoFile(parent, root);
+            if (prefix.equals(relativePath + "/")) {
+                int lastIndex = prefix.lastIndexOf('/');
+                int index = prefix.lastIndexOf('/', lastIndex - 1);
+                return new AliasFilePseudoFile(parent, root, prefix.substring(index + 1, lastIndex));
             }
             if (!StringUtils.isEmpty(prefix) && prefix.startsWith(relativePath)) {
                 return new VirtualDirectoryPseudoFile(parent, name);
@@ -199,20 +204,21 @@ public class PseudoFileSystem {
 
         @Override
         public List<String> listChildren(String relativePath) {
+            relativePath = StringUtils.removeEnd(relativePath, "/") + "/";
             if (relativePath.startsWith(prefix) || prefix.equals(relativePath + "/")) {
-                relativePath = relativePath + "/";
-                List<String> result = new ArrayList<String>();
+                final String pathFragment = StringUtils.removeEnd(relativePath,"/") + "/";
+                Set<String> result = new LinkedHashSet<String>();
                 for (String path : contents.keySet()) {
-                    if (path.startsWith(relativePath)) {
-                        int index = path.indexOf('/', relativePath.length());
+                    if (path.startsWith(pathFragment)) {
+                        int index = path.indexOf('/', pathFragment.length());
                         if (index == -1) {
-                            result.add(path.substring(relativePath.length()));
+                            result.add(path.substring(pathFragment.length()));
                         } else {
-                            result.add(path.substring(relativePath.length(), index));
+                            result.add(path.substring(pathFragment.length(), index));
                         }
                     }
                 }
-                return result;
+                return new ArrayList<String>(result);
             }
             if (prefix.startsWith(relativePath)) {
                 int index = prefix.indexOf('/', relativePath.length());
@@ -225,13 +231,21 @@ public class PseudoFileSystem {
 
         @Override
         public PseudoFile makeChild(PseudoFile parent, String name) {
-            String relativePath = StringUtils.removeEnd(parent.getAbsolutePath(),"/") + "/" + name;
+            String relativePath = StringUtils.removeEnd(parent.getAbsolutePath(), "/") + "/" + name;
             final ZipEntry entry = contents.get(relativePath);
             if (entry != null) {
                 return new ZipPseudoFile(parent, zipFile, entry);
             }
+            if (prefix.equals(relativePath + "/")) {
+                return new VirtualDirectoryPseudoFile(parent, name);
+            }
             if (!StringUtils.isEmpty(prefix) && prefix.startsWith(relativePath)) {
                 return new VirtualDirectoryPseudoFile(parent, name);
+            }
+            for (String childPath: contents.keySet()) {
+                if (!StringUtils.isEmpty(childPath) && childPath.startsWith(relativePath)) {
+                    return new VirtualDirectoryPseudoFile(parent, name);
+                }
             }
             return new NotExistingPseudoFile(parent, name);
         }

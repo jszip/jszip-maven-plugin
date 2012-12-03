@@ -56,8 +56,8 @@
     <mavenFilteringVersion>1.1</mavenFilteringVersion>
     <mavenInvokerVersion>2.1.1</mavenInvokerVersion>
     <mavenVersion>3.0.4</mavenVersion>
-    <jettyVersion>8.1.1.v20120215</jettyVersion>
-    <slf4jVersion>1.6.1</slf4jVersion>
+    <jettyVersion>8.1.8.v20121106</jettyVersion>
+    <slf4jVersion>1.7.2</slf4jVersion>
   </properties>
 
   <dependencies>

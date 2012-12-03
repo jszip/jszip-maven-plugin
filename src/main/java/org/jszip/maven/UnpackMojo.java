@@ -61,6 +61,12 @@ import java.util.Set;
 public class UnpackMojo extends AbstractJSZipMojo {
 
     /**
+     * The artifact path mappings for unpacking.
+     */
+    @Parameter(property = "mappings")
+    private Mapping[] mappings;
+
+    /**
      * The directory where the webapp is built.
      */
     @Parameter(defaultValue = "${project.build.directory}/${project.build.finalName}", required = true)
@@ -121,9 +127,26 @@ public class UnpackMojo extends AbstractJSZipMojo {
         }
 
         for (Artifact artifact : artifacts) {
-            getLog().info("Unpacking " + ArtifactUtils.key(artifact));
-            unpack(artifact, webappDirectory, null, null);
+            String path = getPath(artifact);
+            File artifactDirectory;
+            if (StringUtils.isBlank(path)) {
+                getLog().info("Unpacking " + ArtifactUtils.key(artifact));
+                artifactDirectory = webappDirectory;
+            } else {
+                getLog().info("Unpacking " + ArtifactUtils.key(artifact) + " at path " + path);
+                artifactDirectory = new File(webappDirectory, path);
+            }
+            unpack(artifact, artifactDirectory, null, null);
         }
+    }
+
+    private String getPath(Artifact artifact) {
+        if (mappings == null) return "";
+        for (Mapping mapping: mappings) {
+            if (mapping.isMatch(artifact))
+                return StringUtils.clean(mapping.getPath());
+        }
+        return "";
     }
 
     protected void unpack(Artifact artifact, File location, String includes, String excludes)

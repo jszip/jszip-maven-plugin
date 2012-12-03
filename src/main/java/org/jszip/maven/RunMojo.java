@@ -79,6 +79,7 @@ import org.eclipse.jetty.webapp.WebAppContext;
 import org.jszip.jetty.JettyWebAppContext;
 import org.jszip.jetty.SystemProperties;
 import org.jszip.jetty.SystemProperty;
+import org.jszip.jetty.VirtualDirectoryResource;
 
 import java.io.File;
 import java.io.IOException;
@@ -104,6 +105,12 @@ import java.util.concurrent.TimeUnit;
         defaultPhase = LifecyclePhase.TEST_COMPILE,
         requiresDependencyResolution = ResolutionScope.COMPILE_PLUS_RUNTIME)
 public class RunMojo extends AbstractJSZipMojo {
+    /**
+     * The artifact path mappings for unpacking.
+     */
+    @Parameter(property = "mappings")
+    private Mapping[] mappings;
+
     /**
      * If true, the &lt;testOutputDirectory&gt;
      * and the dependencies of &lt;scope&gt;test&lt;scope&gt;
@@ -536,9 +543,9 @@ public class RunMojo extends AbstractJSZipMojo {
         }
     }
 
-    private void addOverlayResources(List<MavenProject> reactorProjects, List<Resource> resources, Artifact a)
-            throws
-            PluginConfigurationException, PluginContainerException, IOException, MojoExecutionException {
+    private void addOverlayResources(List<MavenProject> reactorProjects, List<Resource> _resources, Artifact a)
+            throws PluginConfigurationException, PluginContainerException, IOException, MojoExecutionException {
+        List<Resource> resources = new ArrayList<Resource>();
         MavenProject fromReactor = findProject(reactorProjects, a);
         if (fromReactor != null) {
             MavenSession session = this.session.clone();
@@ -590,6 +597,24 @@ public class RunMojo extends AbstractJSZipMojo {
             }
         } else {
             resources.add(Resource.newResource("jar:" + a.getFile().toURI().toURL() + "!/"));
+        }
+
+        // TODO support live reloading of mappings
+        String path = "";
+        if (mappings != null) {
+            for (Mapping mapping : mappings) {
+                if (mapping.isMatch(a)) {
+                    path = StringUtils.clean(mapping.getPath());
+                    break;
+                }
+            }
+        }
+
+        if (StringUtils.isBlank(path)) {
+            _resources.addAll(resources);
+        } else {
+            ResourceCollection child = new ResourceCollection(resources.toArray(new Resource[resources.size()]));
+            _resources.add(new VirtualDirectoryResource(child, path));
         }
     }
 

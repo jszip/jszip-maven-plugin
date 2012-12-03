@@ -42,6 +42,7 @@ import org.apache.maven.shared.artifact.filter.collection.ScopeFilter;
 import org.apache.maven.shared.artifact.filter.collection.TypeFilter;
 import org.codehaus.plexus.util.DirectoryScanner;
 import org.codehaus.plexus.util.IOUtil;
+import org.codehaus.plexus.util.StringUtils;
 import org.jszip.pseudo.io.PseudoFileSystem;
 import org.jszip.rhino.JavaScriptTerminationException;
 import org.jszip.rhino.OptimizeContextAction;
@@ -81,6 +82,13 @@ public class OptimizeMojo extends AbstractJSZipMojo {
      * Regex for sniffing the version of r.js being used.
      */
     public static final String R_JS_VERSION_REGEX = "\\s+version\\s*=\\s*(" + QUOTED_STRING_WITH_ESCAPES + ")";
+
+    /**
+     * The artifact path mappings for unpacking.
+     */
+    @Parameter(property = "mappings")
+    private Mapping[] mappings;
+
     /**
      * Directory containing the build profiles.
      */
@@ -264,6 +272,22 @@ public class OptimizeMojo extends AbstractJSZipMojo {
         }
     }
 
+    private String getPath(Artifact artifact) {
+        if (mappings == null) {
+            return "/virtual";
+        }
+        for (Mapping mapping: mappings) {
+            if (mapping.isMatch(artifact)) {
+                final String path = StringUtils.clean(mapping.getPath());
+                if (StringUtils.isBlank(path) || "/".equals(path)) {
+                    return "/virtual";
+                }
+                return "/virtual/" + StringUtils.strip(path, "/");
+            }
+        }
+        return "/virtual";
+    }
+
     private List<PseudoFileSystem.Layer> buildVirtualFileSystemLayers() throws MojoExecutionException {
         List<PseudoFileSystem.Layer> layers = new ArrayList<PseudoFileSystem.Layer>();
         layers.add(new PseudoFileSystem.FileLayer("/target", webappDirectory));
@@ -287,6 +311,7 @@ public class OptimizeMojo extends AbstractJSZipMojo {
         }
 
         for (Artifact artifact : artifacts) {
+            String path = getPath(artifact);
             getLog().info("Adding " + ArtifactUtils.key(artifact) + " to virtual filesystem");
             File file = artifact.getFile();
             if (file.isDirectory()) {
@@ -311,13 +336,13 @@ public class OptimizeMojo extends AbstractJSZipMojo {
                             try {
                                 File contentDirectory = mojo.getContentDirectory();
                                 if (contentDirectory.isDirectory()) {
-                                    getLog().debug("Merging directory " + contentDirectory + " into /virtual");
-                                    layers.add(new PseudoFileSystem.FileLayer("/virtual", contentDirectory));
+                                    getLog().debug("Merging directory " + contentDirectory + " into " + path);
+                                    layers.add(new PseudoFileSystem.FileLayer(path, contentDirectory));
                                 }
                                 File resourcesDirectory = mojo.getResourcesDirectory();
                                 if (resourcesDirectory.isDirectory()) {
-                                    getLog().debug("Merging directory " + contentDirectory + " into /virtual");
-                                    layers.add(new PseudoFileSystem.FileLayer("/virtual", resourcesDirectory));
+                                    getLog().debug("Merging directory " + contentDirectory + " into " + path);
+                                    layers.add(new PseudoFileSystem.FileLayer(path, resourcesDirectory));
                                 }
                             } finally {
                                 mavenPluginManager.releaseMojo(mojo, mojoExecution);
@@ -333,8 +358,8 @@ public class OptimizeMojo extends AbstractJSZipMojo {
                 }
             } else {
                 try {
-                    getLog().debug("Merging .zip file " + file + " into /virtual");
-                    layers.add(new PseudoFileSystem.ZipLayer("/virtual", file));
+                    getLog().debug("Merging .zip file " + file + " into " + path);
+                    layers.add(new PseudoFileSystem.ZipLayer(path, file));
                 } catch (IOException e) {
                     throw new MojoExecutionException(e.getMessage(), e);
                 }

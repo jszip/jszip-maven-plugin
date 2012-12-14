@@ -18,6 +18,7 @@ package org.jszip.jetty;
 import java.io.File;
 import java.io.IOException;
 import java.net.MalformedURLException;
+import java.net.URL;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -25,6 +26,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
 
+import org.apache.commons.lang3.StringUtils;
 import org.eclipse.jetty.plus.webapp.EnvConfiguration;
 import org.eclipse.jetty.util.URIUtil;
 import org.eclipse.jetty.util.log.Log;
@@ -285,5 +287,29 @@ public class JettyWebAppContext extends WebAppContext
             }
         }
         return paths;
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public Resource newResource(URL url) throws IOException {
+        if (url != null && StringUtils.equals("virtual", url.getProtocol())) {
+            // serve virtual URLs if asked to
+            return getBaseResource().getResource(url.getPath());
+        }
+        return super.newResource(url);
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public Resource newResource(String urlOrPath) throws IOException {
+        if (urlOrPath != null && urlOrPath.startsWith("virtual:")) {
+            // serve virtual URLs if asked to
+            return getBaseResource().getResource(urlOrPath.substring("virtual:".length()));
+        }
+        return super.newResource(urlOrPath);
     }
 }

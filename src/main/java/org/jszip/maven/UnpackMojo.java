@@ -117,6 +117,7 @@ public class UnpackMojo extends AbstractJSZipMojo {
      *     &lt;unpackExclude&gt;package.json&lt;/unpackExclude&gt;
      *     &lt;unpackExclude&gt;&#42;&#42;/&#42;.less&lt;/unpackExclude&gt;
      *     &lt;unpackExclude&gt;&#42;&#42;/&#42;.sass&lt;/unpackExclude&gt;
+     *     &lt;unpackExclude&gt;&#42;&#42;/&#42;.scss&lt;/unpackExclude&gt;
      * </pre>
      */
     @Parameter
@@ -157,7 +158,7 @@ public class UnpackMojo extends AbstractJSZipMojo {
         if (unpackExcludes != null && !unpackExcludes.isEmpty()) {
             excludes = StringUtils.join(unpackExcludes.iterator(), ",");
         } else {
-            excludes="META-INF/maven/**/pom.*,package.json,**/*.less,**/*.sass";
+            excludes="META-INF/maven/**/pom.*,package.json,**/*.less,**/*.sass,**/*.scss";
         }
 
 

@@ -63,28 +63,6 @@
 
   <dependencies>
 
-    <!-- jsr223 -->
-    <dependency>
-      <groupId>org.livetribe</groupId>
-      <artifactId>livetribe-jsr223</artifactId>
-      <version>2.0.6</version>
-    </dependency>
-    <dependency>
-      <groupId>com.sun.phobos</groupId>
-      <artifactId>phobos-js</artifactId>
-      <version>0.6.2</version>
-      <exclusions>
-        <exclusion>
-          <groupId>com.sun.phobos</groupId>
-          <artifactId>phobos-rhino</artifactId>
-        </exclusion>
-        <exclusion>
-          <groupId>com.sun.phobos</groupId>
-          <artifactId>jsr223-api</artifactId>
-        </exclusion>
-      </exclusions>
-    </dependency>
-
     <!-- javascript engine -->
     <dependency>
       <groupId>org.mozilla</groupId>

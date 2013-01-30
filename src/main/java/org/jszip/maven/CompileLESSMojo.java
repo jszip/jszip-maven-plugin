@@ -9,6 +9,7 @@ import org.apache.maven.plugins.annotations.Parameter;
 import org.apache.maven.plugins.annotations.ResolutionScope;
 import org.codehaus.plexus.util.IOUtil;
 import org.jszip.pseudo.io.PseudoDirectoryScanner;
+import org.jszip.pseudo.io.PseudoFile;
 import org.jszip.pseudo.io.PseudoFileSystem;
 import org.jszip.rhino.GlobalFunctions;
 import org.jszip.rhino.JavaScriptTerminationException;
@@ -46,6 +47,12 @@ public class CompileLESSMojo extends AbstractPseudoFileSystemProcessorMojo {
      */
     @Parameter(property = "jszip.less.skip", defaultValue = "false")
     private boolean lessSkip;
+
+    /**
+     * Force compilation even if the source LESS file is older than the destination CSS file.
+     */
+    @Parameter(property = "jszip.less.forceIfOlder", defaultValue = "false")
+    private boolean lessForceIfOlder;
 
     /**
      * Compress CSS.
@@ -144,11 +151,24 @@ public class CompileLESSMojo extends AbstractPseudoFileSystemProcessorMojo {
 
             final Scriptable scope = GlobalFunctions.createPseudoFileSystemScope(global, context);
 
-            if (lessCompress) {
-                includedFiles.add(0, "-x");
+            List<String> modifiedFiles = new ArrayList<String>();
+            for (String fileName : includedFiles) {
+                if (!lessForceIfOlder) {
+                    final PseudoFile dest = fs.getPseudoFile("/target/" + fileName.replaceFirst("\\.less$", ".css"));
+                    if (dest.isFile()) {
+                        final PseudoFile src = fs.getPseudoFile("/virtual/" + fileName);
+                        if (src.lastModified() < dest.lastModified()) {
+                            continue;
+                        }
+                    }
+                }
+                modifiedFiles.add(fileName);
             }
 
-            Object[] args = includedFiles.toArray(new Object[includedFiles.size()]);
+            if (lessCompress) {
+                modifiedFiles.add(0, "-x");
+            }
+            Object[] args = modifiedFiles.toArray(new Object[modifiedFiles.size()]);
             Scriptable argsObj = context.newArray(global, args);
             global.defineProperty("arguments", argsObj, ScriptableObject.DONTENUM);
 

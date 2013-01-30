@@ -31,6 +31,14 @@ public class PseudoFileOutputStream extends OutputStream {
         this.delegate = PseudoFileSystem.current().getPseudoFile(filename).$newOutputStream();
     }
 
+    public PseudoFileOutputStream(PseudoFile file, boolean append) throws IOException {
+        this.delegate = file.$newOutputStream(append);
+    }
+
+    public PseudoFileOutputStream(String filename, boolean append) throws IOException {
+        this.delegate = PseudoFileSystem.current().getPseudoFile(filename).$newOutputStream(append);
+    }
+
     @Override
     public void close() throws IOException {
         delegate.close();

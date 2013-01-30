@@ -330,7 +330,16 @@
       <artifactId>commons-lang3</artifactId>
       <version>3.1</version>
     </dependency>
-
+    <dependency>
+      <groupId>org.jruby</groupId>
+      <artifactId>jruby-complete</artifactId>
+      <version>1.7.2</version>
+    </dependency>
+    <dependency>
+      <groupId>me.n4u.sass</groupId>
+      <artifactId>sass-gems</artifactId>
+      <version>3.2.1</version>
+    </dependency>
     <!-- test dependencies -->
     <dependency>
       <groupId>junit</groupId>
@@ -351,6 +360,13 @@
   <build>
     <pluginManagement>
       <plugins>
+        <plugin>
+          <artifactId>maven-compiler-plugin</artifactId>
+          <configuration>
+            <showDeprecation>true</showDeprecation>
+            <showWarnings>true</showWarnings>
+          </configuration>
+        </plugin>
         <plugin>
           <artifactId>maven-invoker-plugin</artifactId>
           <version>1.8</version>

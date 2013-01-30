@@ -154,4 +154,11 @@ public class VirtualDirectoryPseudoFile extends PseudoFile {
     OutputStream $newOutputStream() throws IOException {
         throw new IOException(getPath() + " is a virtual directory");
     }
+
+    /**
+     * {@inheritDoc}
+     */
+    OutputStream $newOutputStream(boolean append) throws IOException {
+        throw new IOException(getPath() + " is a virtual directory");
+    }
 }

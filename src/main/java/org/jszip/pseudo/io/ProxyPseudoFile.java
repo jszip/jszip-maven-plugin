@@ -58,6 +58,13 @@ public class ProxyPseudoFile extends PseudoFile {
     /**
      * {@inheritDoc}
      */
+    OutputStream $newOutputStream(boolean append) throws IOException {
+        return delegate.$newOutputStream(append);
+    }
+
+    /**
+     * {@inheritDoc}
+     */
     public boolean canRead() {
         return delegate.canRead();
     }

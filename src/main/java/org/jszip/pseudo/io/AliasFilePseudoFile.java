@@ -121,6 +121,13 @@ public class AliasFilePseudoFile extends PseudoFile {
     /**
      * {@inheritDoc}
      */
+    OutputStream $newOutputStream(boolean append) throws IOException {
+        return new FileOutputStream(delegate, append);
+    }
+
+    /**
+     * {@inheritDoc}
+     */
     public boolean isFile() {
         return delegate.isFile();
     }

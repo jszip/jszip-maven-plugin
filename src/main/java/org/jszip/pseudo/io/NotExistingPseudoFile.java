@@ -152,4 +152,11 @@ public class NotExistingPseudoFile extends PseudoFile {
     OutputStream $newOutputStream() throws IOException {
         throw new IOException(getPath() + " is a non-existing file");
     }
+
+    /**
+     * {@inheritDoc}
+     */
+    OutputStream $newOutputStream(boolean append) throws IOException {
+        throw new IOException(getPath() + " is a non-existing file");
+    }
 }

@@ -47,6 +47,10 @@ public class PseudoFileSystem {
         this.layers = layers;
     }
 
+    public PseudoFileSystem(List<Layer> layers) {
+        this(layers.toArray(new Layer[layers.size()]));
+    }
+
     public String getPathSeparator() {
         return "/";
     }

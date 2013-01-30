@@ -183,4 +183,11 @@ public class ZipPseudoFile extends PseudoFile {
     OutputStream $newOutputStream() throws IOException {
         throw new IOException(getPath() + " is read-only");
     }
+
+    /**
+     * {@inheritDoc}
+     */
+    OutputStream $newOutputStream(boolean append) throws IOException {
+        throw new IOException(getPath() + " is read-only");
+    }
 }

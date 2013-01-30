@@ -203,4 +203,6 @@ public abstract class PseudoFile {
     abstract InputStream $newInputStream() throws IOException;
 
     abstract OutputStream $newOutputStream() throws IOException;
+
+    abstract OutputStream $newOutputStream(boolean append) throws IOException;
 }

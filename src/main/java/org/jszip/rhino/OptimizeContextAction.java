@@ -19,19 +19,12 @@ package org.jszip.rhino;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.maven.plugin.logging.Log;
 import org.codehaus.plexus.util.FileUtils;
-import org.jszip.pseudo.io.ProxyPseudoFile;
 import org.jszip.pseudo.io.PseudoFile;
-import org.jszip.pseudo.io.PseudoFileInputStream;
-import org.jszip.pseudo.io.PseudoFileOutputStream;
 import org.jszip.pseudo.io.PseudoFileSystem;
 import org.mozilla.javascript.Context;
 import org.mozilla.javascript.ContextAction;
-import org.mozilla.javascript.Function;
 import org.mozilla.javascript.JavaScriptException;
-import org.mozilla.javascript.NativeJavaPackage;
-import org.mozilla.javascript.NativeJavaTopPackage;
 import org.mozilla.javascript.Script;
-import org.mozilla.javascript.ScriptRuntime;
 import org.mozilla.javascript.Scriptable;
 import org.mozilla.javascript.ScriptableObject;
 import org.mozilla.javascript.UniqueTag;
@@ -69,7 +62,7 @@ public class OptimizeContextAction extends ScriptableObject implements ContextAc
     public Object run(Context context) {
         context.setErrorReporter(new MavenLogErrorReporter(log));
         PseudoFileSystem fileSystem = new PseudoFileSystem(layers);
-        context.putThreadLocal(OptimizeContextAction.class, log);
+        context.putThreadLocal(Log.class, log);
         fileSystem.installInContext();
         try {
 
@@ -130,7 +123,7 @@ public class OptimizeContextAction extends ScriptableObject implements ContextAc
                 argsList.add("dir=/target/" + StringUtils.removeEnd(StringUtils.removeStart(dir, "/"),"/")+"/");
             }
 
-            global.defineFunctionProperties(new String[]{"print", "quit"}, OptimizeContextAction.class,
+            global.defineFunctionProperties(new String[]{"print", "quit"}, GlobalFunctions.class,
                     ScriptableObject.DONTENUM);
 
             Script script = context.compileString(source, "r.js", lineNo, null);
@@ -139,31 +132,13 @@ public class OptimizeContextAction extends ScriptableObject implements ContextAc
             Scriptable argsObj = context.newArray(global, argsList.toArray());
             global.defineProperty("arguments", argsObj, ScriptableObject.DONTENUM);
 
-            Scriptable scope = context.newObject(global);
-            scope.setPrototype(global);
-            scope.setParentScope(null);
-
-            NativeJavaTopPackage $packages = (NativeJavaTopPackage) global.get("Packages");
-            NativeJavaPackage $java = (NativeJavaPackage) $packages.get("java");
-            NativeJavaPackage $java_io = (NativeJavaPackage) $java.get("io");
-
-            ProxyNativeJavaPackage proxy$java = new ProxyNativeJavaPackage($java);
-            ProxyNativeJavaPackage proxy$java_io = new ProxyNativeJavaPackage($java_io);
-            proxy$java_io.put("File", global, get(global, "Packages." + ProxyPseudoFile.class.getName()));
-            proxy$java_io.put("FileInputStream", global,
-                    get(global, "Packages." + PseudoFileInputStream.class.getName()));
-            proxy$java_io.put("FileOutputStream", global,
-                    get(global, "Packages." + PseudoFileOutputStream.class.getName()));
-            proxy$java.put("io", global, proxy$java_io);
-            global.defineProperty("java", proxy$java, ScriptableObject.DONTENUM);
+            Scriptable scope = GlobalFunctions.createPseudoFileSystemScope(global, context);
 
             log.info("Applying r.js profile " + profileJs.getPath());
             log.debug("Executing r.js with arguments: " + StringUtils.join(argsList, " "));
-            context.putThreadLocal(ExitCodeHolder.class, new ExitCodeHolder(0));
+            GlobalFunctions.setExitCode(0);
             script.exec(context, scope);
-            ExitCodeHolder result = (ExitCodeHolder) context.getThreadLocal(ExitCodeHolder.class);
-            context.putThreadLocal(ExitCodeHolder.class, null);
-            return result.getExitCode();
+            return GlobalFunctions.getExitCode();
         } finally {
             fileSystem.removeFromContext();
             context.putThreadLocal(OptimizeContextAction.class, null);
@@ -185,85 +160,9 @@ public class OptimizeContextAction extends ScriptableObject implements ContextAc
         }
     }
 
-    private Object get(Scriptable scope, String name) {
-        Scriptable cur = scope;
-        for (String part : StringUtils.split(name, ".")) {
-            Object next = cur.get(part, scope);
-            if (next instanceof Scriptable) {
-                cur = (Scriptable) next;
-            } else {
-                return null;
-            }
-        }
-        return cur;
-    }
-
     @Override
     public String getClassName() {
         return "global";
-    }
-
-    /**
-     * Print the string values of its arguments.
-     * <p/>
-     * This method is defined as a JavaScript function. Note that its arguments
-     * are of the "varargs" form, which allows it to handle an arbitrary number
-     * of arguments supplied to the JavaScript function.
-     */
-    public static void print(Context cx, Scriptable thisObj, Object[] args, Function funObj) {
-        StringBuilder builder = new StringBuilder();
-        for (int i = 0; i < args.length; i++) {
-            if (i > 0) {
-                builder.append(" ");
-            }
-
-            // Convert the arbitrary JavaScript value into a string form.
-            String s = Context.toString(args[i]);
-
-            builder.append(s);
-        }
-        Log log = (Log) cx.getThreadLocal(OptimizeContextAction.class);
-        if (log != null) {
-            for (String line : builder.toString().split("(\\r\\n?)|(\\n\\r?)")) {
-                log.info(line);
-            }
-        }
-    }
-
-    /**
-     * Print the string values of its arguments.
-     * <p/>
-     * This method is defined as a JavaScript function. Note that its arguments
-     * are of the "varargs" form, which allows it to handle an arbitrary number
-     * of arguments supplied to the JavaScript function.
-     */
-    public static void quit(Context cx, Scriptable thisObj, Object[] args, Function funObj) {
-        final int exitCode = args.length == 0 ? 0 : ScriptRuntime.toInt32(args[0]);
-        final Log log = (Log) cx.getThreadLocal(OptimizeContextAction.class);
-        cx.putThreadLocal(ExitCodeHolder.class, new ExitCodeHolder(exitCode));
-        if (exitCode > 0) {
-            if (log != null) {
-                log.error("Script exit code = " + exitCode);
-            }
-        } else {
-            if (log != null) {
-                log.debug("Script exit code = " + exitCode);
-            }
-        }
-
-    }
-
-    private static class ExitCodeHolder {
-        private final int exitCode;
-
-        private ExitCodeHolder(int exitCode) {
-            this.exitCode = exitCode;
-        }
-
-        public int getExitCode() {
-            return exitCode;
-        }
-
     }
 
 }

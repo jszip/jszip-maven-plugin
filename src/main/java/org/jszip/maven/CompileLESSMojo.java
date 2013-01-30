@@ -153,14 +153,17 @@ public class CompileLESSMojo extends AbstractPseudoFileSystemProcessorMojo {
 
             List<String> modifiedFiles = new ArrayList<String>();
             for (String fileName : includedFiles) {
+                final PseudoFile dest = fs.getPseudoFile("/target/" + fileName.replaceFirst("\\.less$", ".css"));
                 if (!lessForceIfOlder) {
-                    final PseudoFile dest = fs.getPseudoFile("/target/" + fileName.replaceFirst("\\.less$", ".css"));
                     if (dest.isFile()) {
                         final PseudoFile src = fs.getPseudoFile("/virtual/" + fileName);
                         if (src.lastModified() < dest.lastModified()) {
                             continue;
                         }
                     }
+                }
+                if (!dest.getParentFile().isDirectory()) {
+                    dest.getParentFile().mkdirs();
                 }
                 modifiedFiles.add(fileName);
             }

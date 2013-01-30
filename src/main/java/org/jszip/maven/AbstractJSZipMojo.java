@@ -34,6 +34,8 @@ import org.codehaus.plexus.util.xml.Xpp3DomUtils;
 
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 /**
@@ -192,4 +194,14 @@ public abstract class AbstractJSZipMojo extends AbstractMojo {
         }
         return null;
     }
+
+    protected static String[] processIncludesExcludes(List<String> list) {
+        List<String> result = new ArrayList<String>();
+        for (String entry : list) {
+            String[] entries = entry.split(",");
+            Collections.addAll(result, entries);
+        }
+        return result.toArray(new String[result.size()]);
+    }
+
 }

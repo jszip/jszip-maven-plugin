@@ -71,15 +71,6 @@ public abstract class AbstractPseudoFileSystemProcessorMojo extends AbstractJSZi
     @Parameter(property = "plugin", readonly = true)
     private PluginDescriptor pluginDescriptor;
 
-    protected static String[] processIncludesExcludes(List<String> list) {
-        List<String> result = new ArrayList<String>();
-        for (String entry : list) {
-            String[] entries = entry.split(",");
-            Collections.addAll(result, entries);
-        }
-        return result.toArray(new String[result.size()]);
-    }
-
     private String getPath(Artifact artifact) {
         if (mappings == null) {
             return "/virtual";

@@ -103,6 +103,26 @@ public class UnpackMojo extends AbstractJSZipMojo {
     private PluginDescriptor pluginDescriptor;
 
     /**
+     * A list of &lt;include&gt; elements specifying the files (by pattern) that should be included in
+     * unpacking.
+     */
+    @Parameter
+    private List<String> unpackIncludes;
+
+    /**
+     * A list of &lt;exclude&gt; elements specifying the files (by pattern) that should be excluded from
+     * unpacking. The default is
+     * <pre>
+     *     &lt;unpackExclude&gt;META-INF/maven/&#42;&#42;/pom.&#42;&lt;/unpackExclude&gt;
+     *     &lt;unpackExclude&gt;package.json&lt;/unpackExclude&gt;
+     *     &lt;unpackExclude&gt;&#42;&#42;/&#42;.less&lt;/unpackExclude&gt;
+     *     &lt;unpackExclude&gt;&#42;&#42;/&#42;.sass&lt;/unpackExclude&gt;
+     * </pre>
+     */
+    @Parameter
+    private List<String> unpackExcludes;
+
+    /**
      * @see org.apache.maven.plugin.Mojo#execute()
      */
     public void execute()
@@ -126,6 +146,22 @@ public class UnpackMojo extends AbstractJSZipMojo {
             throw new MojoExecutionException(e.getMessage(), e);
         }
 
+        String includes;
+        String excludes;
+        if (unpackIncludes != null && !unpackIncludes.isEmpty()) {
+            includes = StringUtils.join(unpackIncludes.iterator(), ",");
+        } else {
+            includes = null;
+        }
+
+        if (unpackExcludes != null && !unpackExcludes.isEmpty()) {
+            excludes = StringUtils.join(unpackExcludes.iterator(), ",");
+        } else {
+            excludes="META-INF/maven/**/pom.*,package.json,**/*.less,**/*.sass";
+        }
+
+
+
         for (Artifact artifact : artifacts) {
             String path = getPath(artifact);
             File artifactDirectory;
@@ -136,7 +172,7 @@ public class UnpackMojo extends AbstractJSZipMojo {
                 getLog().info("Unpacking " + ArtifactUtils.key(artifact) + " at path " + path);
                 artifactDirectory = new File(webappDirectory, path);
             }
-            unpack(artifact, artifactDirectory, null, null);
+            unpack(artifact, artifactDirectory, includes, excludes);
         }
     }
 

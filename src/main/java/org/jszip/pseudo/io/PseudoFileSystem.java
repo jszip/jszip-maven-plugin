@@ -112,11 +112,15 @@ public class PseudoFileSystem {
     }
 
     public synchronized void removeFromContext() {
-        Context.getCurrentContext().putThreadLocal(KEY, null);
+        final Context context = Context.getCurrentContext();
+        if (context != null) {
+            context.putThreadLocal(KEY, null);
+        }
     }
 
     public static PseudoFileSystem current() {
-        return (PseudoFileSystem) Context.getCurrentContext().getThreadLocal(KEY);
+        final Context currentContext = Context.getCurrentContext();
+        return currentContext != null ? (PseudoFileSystem) currentContext.getThreadLocal(KEY) : null;
     }
 
     public abstract static class Layer {
@@ -210,7 +214,7 @@ public class PseudoFileSystem {
         public List<String> listChildren(String relativePath) {
             relativePath = StringUtils.removeEnd(relativePath, "/") + "/";
             if (relativePath.startsWith(prefix) || prefix.equals(relativePath + "/")) {
-                final String pathFragment = StringUtils.removeEnd(relativePath,"/") + "/";
+                final String pathFragment = StringUtils.removeEnd(relativePath, "/") + "/";
                 Set<String> result = new LinkedHashSet<String>();
                 for (String path : contents.keySet()) {
                     if (path.startsWith(pathFragment)) {
@@ -246,7 +250,7 @@ public class PseudoFileSystem {
             if (!StringUtils.isEmpty(prefix) && prefix.startsWith(relativePath)) {
                 return new VirtualDirectoryPseudoFile(parent, name);
             }
-            for (String childPath: contents.keySet()) {
+            for (String childPath : contents.keySet()) {
                 if (!StringUtils.isEmpty(childPath) && childPath.startsWith(relativePath)) {
                     return new VirtualDirectoryPseudoFile(parent, name);
                 }

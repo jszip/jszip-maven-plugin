@@ -14,7 +14,8 @@
    See the License for the specific language governing permissions and
    limitations under the License.
 -->
-<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
   <modelVersion>4.0.0</modelVersion>
 
   <parent>
@@ -31,9 +32,6 @@
   <name>JavaScript Zip Maven Plugin</name>
   <description>A plugin for managing JavaScript Zip archives.</description>
   <url>http://jszip.org/jszip-maven-plugin</url>
-  <prerequisites>
-    <maven>3.0.4</maven>
-  </prerequisites>
 
   <scm>
     <connection>scm:git:git://github.com/jszip/jszip-maven-plugin.git</connection>
@@ -62,6 +60,23 @@
   </properties>
 
   <dependencies>
+
+    <!-- jruby engine -->
+    <dependency>
+      <groupId>org.jruby</groupId>
+      <artifactId>jruby-complete</artifactId>
+      <version>1.6.8</version>
+    </dependency>
+
+    <!-- SASS gem -->
+    <dependency>
+      <groupId>org.jszip.jruby</groupId>
+      <artifactId>sass-gems</artifactId>
+      <version>3.2.5</version>
+      <!--<groupId>com.sass-lang</groupId>-->
+      <!--<artifactId>sass-gems</artifactId>-->
+      <!--<version>3.1.1</version>-->
+    </dependency>
 
     <!-- javascript engine -->
     <dependency>
@@ -307,16 +322,6 @@
       <groupId>org.apache.commons</groupId>
       <artifactId>commons-lang3</artifactId>
       <version>3.1</version>
-    </dependency>
-    <dependency>
-      <groupId>org.jruby</groupId>
-      <artifactId>jruby-complete</artifactId>
-      <version>1.7.2</version>
-    </dependency>
-    <dependency>
-      <groupId>me.n4u.sass</groupId>
-      <artifactId>sass-gems</artifactId>
-      <version>3.2.1</version>
     </dependency>
     <!-- test dependencies -->
     <dependency>

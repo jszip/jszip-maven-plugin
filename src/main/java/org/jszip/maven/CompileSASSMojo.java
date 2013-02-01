@@ -11,6 +11,8 @@ import org.codehaus.plexus.util.IOUtil;
 import org.jruby.embed.EmbedEvalUnit;
 import org.jruby.embed.ScriptingContainer;
 import org.jruby.javasupport.JavaEmbedUtils;
+import org.jszip.css.CssCompilationError;
+import org.jszip.css.CssEngine;
 import org.jszip.pseudo.io.PseudoDirectoryScanner;
 import org.jszip.pseudo.io.PseudoFile;
 import org.jszip.pseudo.io.PseudoFileOutputStream;
@@ -86,9 +88,9 @@ public class CompileSASSMojo extends AbstractPseudoFileSystemProcessorMojo {
         }
         final List<PseudoFileSystem.Layer> layers = buildVirtualFileSystemLayers();
         final PseudoFileSystem fs = new PseudoFileSystem(layers);
-        SassEngine engine = new SassEngine(fs, encoding == null ? "utf-8" : encoding);
         Context.enter();
         try {
+            CssEngine engine = new SassEngine(fs, encoding == null ? "utf-8" : encoding);
             fs.installInContext();
 
             // look for files to compile
@@ -139,6 +141,10 @@ public class CompileSASSMojo extends AbstractPseudoFileSystemProcessorMojo {
                     IOUtil.close(fos);
                 }
             }
+        } catch (CssCompilationError e) {
+            throw new MojoFailureException("Compilation failure: " + e.getMessage(), e);
+        } catch (IOException e) {
+            throw new MojoExecutionException("Could not instantiate compiler: " + e.getMessage(), e);
         } finally {
             fs.removeFromContext();
             Context.exit();

@@ -8,8 +8,12 @@ import org.apache.maven.plugins.annotations.Mojo;
 import org.apache.maven.plugins.annotations.Parameter;
 import org.apache.maven.plugins.annotations.ResolutionScope;
 import org.codehaus.plexus.util.IOUtil;
+import org.jszip.css.CssCompilationError;
+import org.jszip.css.CssEngine;
+import org.jszip.less.LessEngine;
 import org.jszip.pseudo.io.PseudoDirectoryScanner;
 import org.jszip.pseudo.io.PseudoFile;
+import org.jszip.pseudo.io.PseudoFileOutputStream;
 import org.jszip.pseudo.io.PseudoFileSystem;
 import org.jszip.rhino.GlobalFunctions;
 import org.jszip.rhino.JavaScriptTerminationException;
@@ -87,6 +91,12 @@ public class CompileLESSMojo extends AbstractPseudoFileSystemProcessorMojo {
     private List<String> lessExcludes;
 
     /**
+     * The character encoding scheme to be applied when reading SASS files.
+     */
+    @Parameter( defaultValue = "${project.build.sourceEncoding}" )
+    private String encoding;
+
+    /**
      * @see org.apache.maven.plugin.Mojo#execute()
      */
     public void execute() throws MojoExecutionException, MojoFailureException {
@@ -101,32 +111,18 @@ public class CompileLESSMojo extends AbstractPseudoFileSystemProcessorMojo {
             getLog().info("Webapp directory '" + webappDirectory + " does not exist. Nothing to do.");
             return;
         }
-        final ContextFactory contextFactory = new ShellContextFactory();
-        final Global global = new Global();
-        global.initQuitAction(new QuitAction() {
-            public void quit(Context context, int exitCode) {
-                if (exitCode != 0) {
-                    throw new JavaScriptTerminationException("Script exited with exit code of " + exitCode, exitCode);
-                }
-            }
-        });
-        if (!global.isInitialized()) {
-            global.init(contextFactory);
-        }
-
         final List<PseudoFileSystem.Layer> layers = buildVirtualFileSystemLayers();
-        final Context context = contextFactory.enterContext();
         final PseudoFileSystem fs = new PseudoFileSystem(layers);
+        Context.enter();
         try {
-            context.setErrorReporter(new MavenLogErrorReporter(getLog()));
-            context.putThreadLocal(Log.class, getLog());
+            CssEngine engine = new LessEngine(fs, encoding == null ? "utf-8" : encoding, getLog(), lessCompress, customLessScript, showErrorExtracts);
             fs.installInContext();
 
             // look for files to compile
 
             PseudoDirectoryScanner scanner = new PseudoDirectoryScanner();
 
-            scanner.setBasedir(fs.getPseudoFile("/virtual"));
+            scanner.setBasedir(PseudoFileSystem.current().getPseudoFile("/virtual"));
 
             if (lessIncludes != null && !lessIncludes.isEmpty()) {
                 scanner.setIncludes(processIncludesExcludes(lessIncludes));
@@ -145,13 +141,6 @@ public class CompileLESSMojo extends AbstractPseudoFileSystemProcessorMojo {
             final List<String> includedFiles = new ArrayList<String>(Arrays.asList(scanner.getIncludedFiles()));
             getLog().debug("Files to compile: " + includedFiles);
 
-            global.defineFunctionProperties(new String[]{"print", "debug", "warn", "quit", "readFile"},
-                    GlobalFunctions.class,
-                    ScriptableObject.DONTENUM);
-
-            final Scriptable scope = GlobalFunctions.createPseudoFileSystemScope(global, context);
-
-            List<String> modifiedFiles = new ArrayList<String>();
             for (String fileName : includedFiles) {
                 final PseudoFile dest = fs.getPseudoFile("/target/" + fileName.replaceFirst("\\.less$", ".css"));
                 if (!lessForceIfOlder) {
@@ -165,80 +154,25 @@ public class CompileLESSMojo extends AbstractPseudoFileSystemProcessorMojo {
                 if (!dest.getParentFile().isDirectory()) {
                     dest.getParentFile().mkdirs();
                 }
-                modifiedFiles.add(fileName);
+
+                final String css = engine.toCSS("/virtual/" + fileName);
+                PseudoFileOutputStream fos = null;
+                try {
+                    fos = new PseudoFileOutputStream(dest);
+                    IOUtil.copy(css, fos);
+                } catch (IOException e) {
+                    throw new MojoFailureException("Could not write CSS file produced from " + fileName, e);
+                } finally {
+                    IOUtil.close(fos);
+                }
             }
-
-            if (lessCompress) {
-                modifiedFiles.add(0, "-x");
-            }
-            Object[] args = modifiedFiles.toArray(new Object[modifiedFiles.size()]);
-            Scriptable argsObj = context.newArray(global, args);
-            global.defineProperty("arguments", argsObj, ScriptableObject.DONTENUM);
-
-            // stub out some code to allow using less-rhino.js
-
-            compileScript(context, "less-env.js", null, "/org/jszip/maven/less-env.js")
-                    .exec(context, scope);
-
-            // now load less-rhino.js
-
-            compileScript(context, "less-rhino.js", customLessScript, "/org/jszip/maven/less-rhino.js")
-                    .exec(context, scope);
-
-            // now use our engine to process the LESS files
-
-            global.defineProperty("showErrorExtracts", showErrorExtracts, ScriptableObject.DONTENUM);
-
-            GlobalFunctions.setExitCode(0);
-
-            compileScript(context, "less-engine.js", null, "/org/jszip/maven/less-engine.js")
-                    .exec(context, scope);
-
-            // check for errors
-
-            final Integer exitCode = GlobalFunctions.getExitCode();
-            if (lessFailOnError && exitCode != null && exitCode != 0) {
-                throw new MojoFailureException("Compilation failure");
-            }
-
+        } catch (CssCompilationError e) {
+            throw new MojoFailureException("Compilation failure: " + e.getMessage(), e);
+        } catch (IOException e) {
+            throw new MojoExecutionException("Could not instantiate compiler: " + e.getMessage(), e);
         } finally {
             fs.removeFromContext();
             Context.exit();
-            context.putThreadLocal(Log.class, null);
         }
-    }
-
-    private Script compileScript(Context context, String scriptName, File customScriptFile,
-                                 String bundledScriptResource)
-            throws MojoExecutionException {
-        String source;
-        int lineNo = 0;
-        InputStream inputStream = null;
-        InputStreamReader reader = null;
-        try {
-            if (customScriptFile != null && customScriptFile.isFile()) {
-                getLog().debug("Using custom " + scriptName + " from: " + customScriptFile);
-                inputStream = new FileInputStream(customScriptFile);
-            } else {
-                getLog().debug("Using bundled " + scriptName);
-                inputStream = getClass().getResourceAsStream(bundledScriptResource);
-            }
-            source = IOUtil.toString(inputStream, "UTF-8");
-            if (source.startsWith("#!")) {
-                int i1 = source.indexOf('\n');
-                int i2 = source.indexOf('\r');
-                int index = (i1 == -1 || i2 == -1) ? Math.max(i1, i2) : Math.min(i1, i2);
-                if (index > 0) {
-                    source = source.substring(index);
-                    lineNo++;
-                }
-            }
-        } catch (IOException e) {
-            throw new MojoExecutionException(e.getMessage(), e);
-        } finally {
-            IOUtil.close(reader);
-            IOUtil.close(inputStream);
-        }
-        return context.compileString(source, scriptName, lineNo, null);
     }
 }

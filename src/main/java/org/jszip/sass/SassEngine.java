@@ -3,28 +3,37 @@ package org.jszip.sass;
 import org.codehaus.plexus.util.FileUtils;
 import org.jruby.Ruby;
 import org.jruby.embed.EmbedEvalUnit;
+import org.jruby.embed.ParseFailedException;
 import org.jruby.embed.ScriptingContainer;
 import org.jruby.javasupport.JavaEmbedUtils;
+import org.jszip.css.CssEngine;
 import org.jszip.pseudo.io.PseudoFileSystem;
 
 import java.io.File;
+import java.io.IOException;
 
 /**
  * @author stephenc
  * @since 31/01/2013 15:30
  */
-public class SassEngine {
+public class SassEngine implements CssEngine {
 
     private final PseudoFileSystem fs;
     private ScriptingContainer container;
     private final EmbedEvalUnit evalUnit;
 
-    public SassEngine(PseudoFileSystem fs, String encoding) {
+    public SassEngine(PseudoFileSystem fs, String encoding) throws IOException {
         this.fs = fs;
         this.container = new ScriptingContainer();
         this.container.put("filesystem", new PseudoFileSystemImporter(fs, encoding));
         this.container.put("filename", null);
+        try {
         evalUnit = this.container.parse(getClass().getResourceAsStream("sass-engine.rb"), "sass-engine.rb");
+        } catch (ParseFailedException e) {
+            final IOException ioe = new IOException(e.getMessage());
+            ioe.initCause(e);
+            throw ioe;
+        }
     }
 
     public String toCSS(String name) {

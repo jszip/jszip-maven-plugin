@@ -91,7 +91,7 @@ public class CompileLESSMojo extends AbstractPseudoFileSystemProcessorMojo {
     private List<String> lessExcludes;
 
     /**
-     * The character encoding scheme to be applied when reading SASS files.
+     * The character encoding scheme to be applied when reading LESS files.
      */
     @Parameter( defaultValue = "${project.build.sourceEncoding}" )
     private String encoding;

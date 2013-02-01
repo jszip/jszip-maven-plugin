@@ -37,10 +37,14 @@ public abstract class PseudoFile {
     }
 
     public final String getAbsolutePath() {
+        return getAbsolutePath(PseudoFileSystem.current());
+    }
+
+    public final String getAbsolutePath(PseudoFileSystem fs) {
         StringBuilder result = new StringBuilder();
-        final String pathSeparator = PseudoFileSystem.current().getPathSeparator();
+        final String pathSeparator = fs.getPathSeparator();
         if (parent != null) {
-            String parentPath = parent.getAbsolutePath();
+            String parentPath = parent.getAbsolutePath(fs);
             if (!StringUtils.isEmpty(parentPath)) {
                 result.append(parentPath);
                 if (!parentPath.equals(pathSeparator)) {

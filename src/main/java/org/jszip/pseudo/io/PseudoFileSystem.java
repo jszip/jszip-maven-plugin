@@ -57,7 +57,7 @@ public class PseudoFileSystem {
 
     public PseudoFile[] listChildren(PseudoFile dir, PseudoFileFilter filter) {
         TreeMap<String, Layer> names = new TreeMap<String, Layer>();
-        final String path = dir.getAbsolutePath();
+        final String path = dir.getAbsolutePath(this);
         for (int i = layers.length - 1; i >= 0; i--) {
             for (String name : layers[i].listChildren(path)) {
                 names.put(name, layers[i]);
@@ -66,7 +66,7 @@ public class PseudoFileSystem {
         List<PseudoFile> result = new ArrayList<PseudoFile>(names.size());
         for (Map.Entry<String, Layer> entry : names.entrySet()) {
             if (filter.accept(entry.getKey())) {
-                result.add(entry.getValue().makeChild(dir, entry.getKey()));
+                result.add(entry.getValue().makeChild(this, dir, entry.getKey()));
             }
         }
         return result.toArray(new PseudoFile[result.size()]);
@@ -95,16 +95,16 @@ public class PseudoFileSystem {
         if (name.equals("..")) {
             return parent.getParentFile();
         }
-        String parentPath = parent.getAbsolutePath();
+        String parentPath = parent.getAbsolutePath(this);
         for (Layer layer : layers) {
             if (layer.listChildren(parentPath).contains(name)) {
-                return layer.makeChild(parent, name);
+                return layer.makeChild(this, parent, name);
             }
         }
         if (layers.length == 0) {
             return new VirtualDirectoryPseudoFile(parent, name);
         }
-        return layers[0].makeChild(parent, name);
+        return layers[0].makeChild(this, parent, name);
     }
 
     public synchronized void installInContext() {
@@ -127,7 +127,11 @@ public class PseudoFileSystem {
 
         public abstract List<String> listChildren(String relativePath);
 
-        public abstract PseudoFile makeChild(PseudoFile parent, String name);
+        public PseudoFile makeChild(PseudoFile parent, String name) {
+            return makeChild(PseudoFileSystem.current(), parent, name);
+        }
+
+        public abstract PseudoFile makeChild(PseudoFileSystem fs, PseudoFile parent, String name);
 
     }
 
@@ -163,8 +167,8 @@ public class PseudoFileSystem {
         }
 
         @Override
-        public PseudoFile makeChild(PseudoFile parent, String name) {
-            String relativePath = StringUtils.removeEnd(parent.getAbsolutePath(), "/") + "/" + name;
+        public PseudoFile makeChild(PseudoFileSystem fs, PseudoFile parent, String name) {
+            String relativePath = StringUtils.removeEnd(parent.getAbsolutePath(fs), "/") + "/" + name;
             if (relativePath.startsWith(prefix)) {
                 return new FilePseudoFile(parent, new File(root, relativePath.substring(prefix.length())));
             }
@@ -238,8 +242,8 @@ public class PseudoFileSystem {
         }
 
         @Override
-        public PseudoFile makeChild(PseudoFile parent, String name) {
-            String relativePath = StringUtils.removeEnd(parent.getAbsolutePath(), "/") + "/" + name;
+        public PseudoFile makeChild(PseudoFileSystem fs, PseudoFile parent, String name) {
+            String relativePath = StringUtils.removeEnd(parent.getAbsolutePath(fs), "/") + "/" + name;
             final ZipEntry entry = contents.get(relativePath);
             if (entry != null) {
                 return new ZipPseudoFile(parent, zipFile, entry);

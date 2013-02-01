@@ -88,14 +88,14 @@ public class CompileSASSMojo extends AbstractPseudoFileSystemProcessorMojo {
         }
         final List<PseudoFileSystem.Layer> layers = buildVirtualFileSystemLayers();
         final PseudoFileSystem fs = new PseudoFileSystem(layers);
-        Context.enter();
         try {
             CssEngine engine = new SassEngine(fs, encoding == null ? "utf-8" : encoding);
-            fs.installInContext();
 
             // look for files to compile
 
             PseudoDirectoryScanner scanner = new PseudoDirectoryScanner();
+
+            scanner.setFileSystem(fs);
 
             scanner.setBasedir(fs.getPseudoFile("/virtual"));
 
@@ -117,7 +117,7 @@ public class CompileSASSMojo extends AbstractPseudoFileSystemProcessorMojo {
             getLog().debug("Files to compile: " + includedFiles);
 
             for (String fileName : includedFiles) {
-                final PseudoFile dest = fs.getPseudoFile("/target/" + fileName.replaceFirst("\\.s[ac]ss$", ".css"));
+                final PseudoFile dest = fs.getPseudoFile("/target/" + engine.mapName(fileName));
                 if (!sassForceIfOlder) {
                     if (dest.isFile()) {
                         final PseudoFile src = fs.getPseudoFile("/virtual/" + fileName);
@@ -145,9 +145,6 @@ public class CompileSASSMojo extends AbstractPseudoFileSystemProcessorMojo {
             throw new MojoFailureException("Compilation failure: " + e.getMessage(), e);
         } catch (IOException e) {
             throw new MojoExecutionException("Could not instantiate compiler: " + e.getMessage(), e);
-        } finally {
-            fs.removeFromContext();
-            Context.exit();
         }
     }
 }

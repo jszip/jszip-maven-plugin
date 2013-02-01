@@ -80,6 +80,7 @@ import org.jszip.jetty.JettyWebAppContext;
 import org.jszip.jetty.SystemProperties;
 import org.jszip.jetty.SystemProperty;
 import org.jszip.jetty.VirtualDirectoryResource;
+import org.jszip.pseudo.io.PseudoFileSystem;
 
 import java.io.File;
 import java.io.IOException;
@@ -616,6 +617,87 @@ public class RunMojo extends AbstractJSZipMojo {
             ResourceCollection child = new ResourceCollection(resources.toArray(new Resource[resources.size()]));
             _resources.add(new VirtualDirectoryResource(child, path));
         }
+    }
+
+    private void addCssEngineResources(MavenProject project, List<MavenProject> reactorProjects, Mapping[] mappings)
+            throws MojoExecutionException {
+        List<PseudoFileSystem.Layer> layers = new ArrayList<PseudoFileSystem.Layer>();
+        layers.add(new PseudoFileSystem.FileLayer("/virtual", warSourceDirectory));
+        FilterArtifacts filter = new FilterArtifacts();
+
+        filter.addFilter(new ProjectTransitivityFilter(project.getDependencyArtifacts(), false));
+
+        filter.addFilter(new ScopeFilter("runtime", ""));
+
+        filter.addFilter(new TypeFilter(JSZIP_TYPE, ""));
+
+        // start with all artifacts.
+        Set<Artifact> artifacts = project.getArtifacts();
+
+        // perform filtering
+        try {
+            artifacts = filter.filter(artifacts);
+        } catch (ArtifactFilterException e) {
+            throw new MojoExecutionException(e.getMessage(), e);
+        }
+
+        for (Artifact artifact : artifacts) {
+            String path = Mapping.getArtifactPath(mappings, artifact);
+            getLog().info("Adding " + ArtifactUtils.key(artifact) + " to virtual filesystem");
+            File file = artifact.getFile();
+            if (file.isDirectory()) {
+                MavenProject fromReactor = findProject(reactorProjects, artifact);
+                if (fromReactor != null) {
+                    MavenSession session = this.session.clone();
+                    session.setCurrentProject(fromReactor);
+                    Plugin plugin = findThisPluginInProject(fromReactor);
+                    try {
+                        // we cheat here and use our version of the plugin... but this is less of a cheat than the only
+                        // other way which is via reflection.
+                        MojoDescriptor jszipDescriptor = findMojoDescriptor(this.pluginDescriptor, JSZipMojo.class);
+
+                        for (PluginExecution pluginExecution : plugin.getExecutions()) {
+                            if (!pluginExecution.getGoals().contains(jszipDescriptor.getGoal())) {
+                                continue;
+                            }
+                            MojoExecution mojoExecution =
+                                    createMojoExecution(plugin, pluginExecution, jszipDescriptor);
+                            JSZipMojo mojo = (JSZipMojo) mavenPluginManager
+                                    .getConfiguredMojo(org.apache.maven.plugin.Mojo.class, session, mojoExecution);
+                            try {
+                                File contentDirectory = mojo.getContentDirectory();
+                                if (contentDirectory.isDirectory()) {
+                                    getLog().debug("Merging directory " + contentDirectory + " into " + path);
+                                    layers.add(new PseudoFileSystem.FileLayer(path, contentDirectory));
+                                }
+                                File resourcesDirectory = mojo.getResourcesDirectory();
+                                if (resourcesDirectory.isDirectory()) {
+                                    getLog().debug("Merging directory " + contentDirectory + " into " + path);
+                                    layers.add(new PseudoFileSystem.FileLayer(path, resourcesDirectory));
+                                }
+                            } finally {
+                                mavenPluginManager.releaseMojo(mojo, mojoExecution);
+                            }
+                        }
+                    } catch (PluginConfigurationException e) {
+                        throw new MojoExecutionException(e.getMessage(), e);
+                    } catch (PluginContainerException e) {
+                        throw new MojoExecutionException(e.getMessage(), e);
+                    }
+                } else {
+                    throw new MojoExecutionException("Cannot find jzsip artifact: " + artifact.getId());
+                }
+            } else {
+                try {
+                    getLog().debug("Merging .zip file " + file + " into " + path);
+                    layers.add(new PseudoFileSystem.ZipLayer(path, file));
+                } catch (IOException e) {
+                    throw new MojoExecutionException(e.getMessage(), e);
+                }
+            }
+        }
+
+
     }
 
     private void injectMissingArtifacts(MavenProject destination, MavenProject source) {

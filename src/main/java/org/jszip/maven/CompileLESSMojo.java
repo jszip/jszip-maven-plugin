@@ -113,16 +113,16 @@ public class CompileLESSMojo extends AbstractPseudoFileSystemProcessorMojo {
         }
         final List<PseudoFileSystem.Layer> layers = buildVirtualFileSystemLayers();
         final PseudoFileSystem fs = new PseudoFileSystem(layers);
-        Context.enter();
         try {
             CssEngine engine = new LessEngine(fs, encoding == null ? "utf-8" : encoding, getLog(), lessCompress, customLessScript, showErrorExtracts);
-            fs.installInContext();
 
             // look for files to compile
 
             PseudoDirectoryScanner scanner = new PseudoDirectoryScanner();
 
-            scanner.setBasedir(PseudoFileSystem.current().getPseudoFile("/virtual"));
+            scanner.setFileSystem(fs);
+
+            scanner.setBasedir(fs.getPseudoFile("/virtual"));
 
             if (lessIncludes != null && !lessIncludes.isEmpty()) {
                 scanner.setIncludes(processIncludesExcludes(lessIncludes));
@@ -142,7 +142,7 @@ public class CompileLESSMojo extends AbstractPseudoFileSystemProcessorMojo {
             getLog().debug("Files to compile: " + includedFiles);
 
             for (String fileName : includedFiles) {
-                final PseudoFile dest = fs.getPseudoFile("/target/" + fileName.replaceFirst("\\.less$", ".css"));
+                final PseudoFile dest = fs.getPseudoFile("/target/" + engine.mapName(fileName));
                 if (!lessForceIfOlder) {
                     if (dest.isFile()) {
                         final PseudoFile src = fs.getPseudoFile("/virtual/" + fileName);
@@ -170,9 +170,6 @@ public class CompileLESSMojo extends AbstractPseudoFileSystemProcessorMojo {
             throw new MojoFailureException("Compilation failure: " + e.getMessage(), e);
         } catch (IOException e) {
             throw new MojoExecutionException("Could not instantiate compiler: " + e.getMessage(), e);
-        } finally {
-            fs.removeFromContext();
-            Context.exit();
         }
     }
 }

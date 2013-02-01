@@ -5,7 +5,6 @@ import org.eclipse.jetty.util.URIUtil;
 import org.eclipse.jetty.util.resource.Resource;
 
 import java.io.File;
-import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -247,119 +246,6 @@ public class VirtualDirectoryResource extends Resource {
         protected URLConnection openConnection(URL u) throws IOException {
             throw new IOException("virtual:" + u.getPath() + " is a virtual URL");
         }
-    }
-
-    /**
-     * A resource that does not exist.
-     */
-    private static class BadResource extends Resource {
-
-        private BadResource() {
-        }
-
-
-        /** {@inheritDoc} */
-        @Override
-        public boolean isContainedIn(Resource r) throws MalformedURLException {
-            return false;
-        }
-
-        /** {@inheritDoc} */
-        @Override
-        public void release() {
-        }
-
-        /** {@inheritDoc} */
-        @Override
-        public boolean exists() {
-            return false;
-        }
-
-        /** {@inheritDoc} */
-        @Override
-        public long lastModified() {
-            return -1;
-        }
-
-        /** {@inheritDoc} */
-        @Override
-        public boolean isDirectory() {
-            return false;
-        }
-
-        /** {@inheritDoc} */
-        @Override
-        public long length() {
-            return -1;
-        }
-
-        /** {@inheritDoc} */
-        @Override
-        public URL getURL() {
-            return null;
-        }
-
-        /** {@inheritDoc} */
-        @Override
-        public File getFile() {
-            return null;
-        }
-
-        /** {@inheritDoc} */
-        @Override
-        public String getName() {
-            return null;
-        }
-
-        /** {@inheritDoc} */
-        @Override
-        public InputStream getInputStream() throws IOException {
-            throw new FileNotFoundException();
-        }
-
-        /** {@inheritDoc} */
-        @Override
-        public OutputStream getOutputStream()
-                throws java.io.IOException, SecurityException {
-            throw new FileNotFoundException();
-        }
-
-        /** {@inheritDoc} */
-        @Override
-        public boolean delete() throws SecurityException {
-            throw new SecurityException();
-        }
-
-        /** {@inheritDoc} */
-        @Override
-        public boolean renameTo(Resource dest) throws SecurityException {
-            throw new SecurityException();
-        }
-
-        /** {@inheritDoc} */
-        @Override
-        public String[] list() {
-            return null;
-        }
-
-        /** {@inheritDoc} */
-        @Override
-        public Resource addPath(String path) throws IOException, MalformedURLException {
-            return this;
-        }
-
-        /** {@inheritDoc} */
-        @Override
-        public void copyTo(File destination) throws IOException {
-            throw new SecurityException();
-        }
-
-        /** {@inheritDoc} */
-        @Override
-        public String toString() {
-            return super.toString() + "; BadResource";
-        }
-
     }
 
 }

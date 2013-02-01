@@ -1,6 +1,7 @@
 package org.jszip.less;
 
 import org.apache.maven.plugin.logging.Log;
+import org.codehaus.plexus.util.FileUtils;
 import org.codehaus.plexus.util.IOUtil;
 import org.jszip.css.CssCompilationError;
 import org.jszip.css.CssEngine;
@@ -10,10 +11,8 @@ import org.jszip.rhino.JavaScriptTerminationException;
 import org.jszip.rhino.MavenLogErrorReporter;
 import org.mozilla.javascript.Context;
 import org.mozilla.javascript.ContextFactory;
-import org.mozilla.javascript.EvaluatorException;
 import org.mozilla.javascript.Function;
 import org.mozilla.javascript.JavaScriptException;
-import org.mozilla.javascript.RhinoException;
 import org.mozilla.javascript.Script;
 import org.mozilla.javascript.Scriptable;
 import org.mozilla.javascript.ScriptableObject;
@@ -94,6 +93,10 @@ public class LessEngine implements CssEngine {
         }
     }
 
+    public String mapName(String sourceFileName) {
+        return sourceFileName.replaceFirst("\\.[lL][eE][sS][sS]$", ".css");
+    }
+
     public String toCSS(String name) throws CssCompilationError {
 
         final Context context = contextFactory.enterContext();
@@ -104,7 +107,8 @@ public class LessEngine implements CssEngine {
 
             GlobalFunctions.setExitCode(0);
 
-            final String result = (String) function.call(context, scope, scope, new Object[]{name, encoding, lessCompress});
+            final String result =
+                    (String) function.call(context, scope, scope, new Object[]{name, encoding, lessCompress});
 
             // check for errors
 
@@ -116,8 +120,8 @@ public class LessEngine implements CssEngine {
         } catch (JavaScriptException e) {
             if (e.getValue() instanceof Scriptable) {
                 Scriptable jse = (Scriptable) e.getValue();
-                int line = jse.has("line", jse) ? ((Number)jse.get("line", jse)).intValue() : -1;
-                int col = jse.has("col", jse) ? ((Number)jse.get("col", jse)).intValue() : -1;
+                int line = jse.has("line", jse) ? ((Number) jse.get("line", jse)).intValue() : -1;
+                int col = jse.has("col", jse) ? ((Number) jse.get("col", jse)).intValue() : -1;
                 throw new CssCompilationError(name, line, col, e);
             }
             throw new CssCompilationError(name, -1, -1, e);

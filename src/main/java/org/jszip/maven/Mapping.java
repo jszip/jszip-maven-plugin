@@ -88,4 +88,22 @@ public class Mapping {
         return token.equals(pattern);
 
     }
+
+    public static String getArtifactPath(Mapping[] mappings, Artifact artifact) {
+        if (mappings == null) {
+            return "/virtual";
+        }
+        for (Mapping mapping: mappings) {
+            if (mapping.isMatch(artifact)) {
+                final String path = StringUtils.clean(mapping.getPath());
+                if (StringUtils.isBlank(path) || "/".equals(path)) {
+                    return "/virtual";
+                }
+                return "/virtual/" + StringUtils.strip(path, "/");
+            }
+        }
+        return "/virtual";
+    }
+
+
 }

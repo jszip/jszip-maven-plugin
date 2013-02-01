@@ -155,6 +155,8 @@ public class PseudoDirectoryScanner
 
     public static final String[] DEFAULTEXCLUDES = AbstractScanner.DEFAULTEXCLUDES;
 
+    protected PseudoFileSystem fs;
+
     /** The base directory to be scanned. */
     protected PseudoFile basedir;
 
@@ -214,6 +216,14 @@ public class PseudoDirectoryScanner
      */
     public PseudoDirectoryScanner()
     {
+    }
+
+    public PseudoFileSystem getFileSystem() {
+        return fs == null ? PseudoFileSystem.current() : fs;
+    }
+
+    public void setFileSystem(PseudoFileSystem fs) {
+        this.fs = fs;
     }
 
     /**
@@ -348,7 +358,7 @@ public class PseudoDirectoryScanner
         {
             if ( !couldHoldIncluded( anExcl ) )
             {
-                scandir( PseudoFileSystem.current().getPseudoFile( basedir, anExcl ), anExcl + File.separator, false );
+                scandir( getFileSystem().getPseudoFile(basedir, anExcl), anExcl + File.separator, false );
             }
         }
 
@@ -356,7 +366,7 @@ public class PseudoDirectoryScanner
         {
             if ( !couldHoldIncluded( aNotIncl ) )
             {
-                scandir( PseudoFileSystem.current().getPseudoFile( basedir, aNotIncl ), aNotIncl + File.separator, false );
+                scandir( getFileSystem().getPseudoFile(basedir, aNotIncl), aNotIncl + File.separator, false );
             }
         }
 
@@ -385,34 +395,10 @@ public class PseudoDirectoryScanner
      */
     protected void scandir( PseudoFile dir, String vpath, boolean fast )
     {
-        String[] newfiles = dir.list();
-
-        if ( newfiles == null )
-        {
-            /*
-             * two reasons are mentioned in the API docs for PseudoFile.list
-             * (1) dir is not a directory. This is impossible as
-             *     we wouldn't get here in this case.
-             * (2) an IO error occurred (why doesn't it throw an exception
-             *     then???)
-             */
-
-
-            /*
-             * [jdcasey] (2) is apparently happening to me, as this is killing one of my tests...
-             * this is affecting the assembly plugin, fwiw. I will initialize the newfiles array as
-             * zero-length for now.
-             *
-             * NOTE: I can't find the problematic code, as it appears to come from a native method
-             * in UnixFileSystem...
-             */
-            /*
-             * [bentmann] A null array will also be returned from list() on NTFS when dir refers to a soft link or
-             * junction point whose target is not existent.
-             */
-            newfiles = new String[0];
-
-            // throw new IOException( "IO error scanning directory " + dir.getAbsolutePath() );
+        PseudoFile[] children = getFileSystem().listChildren(dir, PseudoFileFilter.FILTER_NONE);
+        String[] newfiles = new String[children.length];
+        for (int i = 0; i < children.length; i++) {
+            newfiles[i] = children[i].getName();
         }
 
         if ( !followSymlinks )
@@ -425,7 +411,7 @@ public class PseudoDirectoryScanner
                     if ( isSymbolicLink( dir, newfile ) )
                     {
                         String name = vpath + newfile;
-                        PseudoFile file = PseudoFileSystem.current().getPseudoFile( dir, newfile );
+                        PseudoFile file = getFileSystem().getPseudoFile(dir, newfile);
                         if ( file.isDirectory() )
                         {
                             dirsExcluded.addElement( name );
@@ -455,7 +441,7 @@ public class PseudoDirectoryScanner
         for ( String newfile : newfiles )
         {
             String name = vpath + newfile;
-            PseudoFile file = PseudoFileSystem.current().getPseudoFile( dir, newfile );
+            PseudoFile file = getFileSystem().getPseudoFile(dir, newfile);
             if ( file.isDirectory() )
             {
                 if ( isIncluded( name ) )
@@ -467,7 +453,7 @@ public class PseudoDirectoryScanner
                             dirsIncluded.addElement( name );
                             if ( fast )
                             {
-                                scandir( file, name + PseudoFileSystem.current().getPathSeparator(), fast );
+                                scandir( file, name + getFileSystem().getPathSeparator(), fast );
                             }
                         }
                         else
@@ -476,7 +462,7 @@ public class PseudoDirectoryScanner
                             dirsDeselected.addElement( name );
                             if ( fast && couldHoldIncluded( name ) )
                             {
-                                scandir( file, name + PseudoFileSystem.current().getPathSeparator(), fast );
+                                scandir( file, name + getFileSystem().getPathSeparator(), fast );
                             }
                         }
 
@@ -487,7 +473,7 @@ public class PseudoDirectoryScanner
                         dirsExcluded.addElement( name );
                         if ( fast && couldHoldIncluded( name ) )
                         {
-                            scandir( file, name + PseudoFileSystem.current().getPathSeparator(), fast );
+                            scandir( file, name + getFileSystem().getPathSeparator(), fast );
                         }
                     }
                 }
@@ -497,12 +483,12 @@ public class PseudoDirectoryScanner
                     dirsNotIncluded.addElement( name );
                     if ( fast && couldHoldIncluded( name ) )
                     {
-                        scandir( file, name + PseudoFileSystem.current().getPathSeparator(), fast );
+                        scandir( file, name + getFileSystem().getPathSeparator(), fast );
                     }
                 }
                 if ( !fast )
                 {
-                    scandir( file, name + PseudoFileSystem.current().getPathSeparator(), fast );
+                    scandir( file, name + getFileSystem().getPathSeparator(), fast );
                 }
             }
             else if ( file.isFile() )

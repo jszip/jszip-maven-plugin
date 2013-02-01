@@ -26,7 +26,6 @@ import org.jszip.pseudo.io.PseudoFileSystem;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.Set;
 
@@ -72,19 +71,7 @@ public abstract class AbstractPseudoFileSystemProcessorMojo extends AbstractJSZi
     private PluginDescriptor pluginDescriptor;
 
     private String getPath(Artifact artifact) {
-        if (mappings == null) {
-            return "/virtual";
-        }
-        for (Mapping mapping: mappings) {
-            if (mapping.isMatch(artifact)) {
-                final String path = StringUtils.clean(mapping.getPath());
-                if (StringUtils.isBlank(path) || "/".equals(path)) {
-                    return "/virtual";
-                }
-                return "/virtual/" + StringUtils.strip(path, "/");
-            }
-        }
-        return "/virtual";
+        return Mapping.getArtifactPath(mappings, artifact);
     }
 
     protected List<PseudoFileSystem.Layer> buildVirtualFileSystemLayers() throws MojoExecutionException {

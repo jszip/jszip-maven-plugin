@@ -144,15 +144,15 @@ public class RunMojo extends AbstractJSZipMojo {
     /**
      * Root directory for all html/jsp etc files
      */
-    @Parameter(property = "maven.war.src")
-    private File webAppSourceDirectory;
+    @Parameter(defaultValue = "${basedir}/src/main/webapp", required = true)
+    private File warSourceDirectory = null;
 
 
     /**
      * List of connectors to use. If none are configured
      * then the default is a single SelectChannelConnector at port 8080. You can
      * override this default port number by using the system property jetty.port
-     * on the command line, eg:  mvn -Djetty.port=9999 jetty:run. Consider using instead
+     * on the command line, eg:  mvn -Djetty.port=9999 jszip:run. Consider using instead
      * the &lt;jettyXml&gt; element to specify external jetty xml config file.
      */
     @Parameter
@@ -299,11 +299,11 @@ public class RunMojo extends AbstractJSZipMojo {
             for (Artifact a : getOverlayArtifacts(project, scope)) {
                 addOverlayResources(reactorProjects, resources, a);
             }
-            if (webAppSourceDirectory == null) {
-                webAppSourceDirectory = new File(project.getBasedir(), "src/main/webapp");
+            if (warSourceDirectory == null) {
+                warSourceDirectory = new File(project.getBasedir(), "src/main/webapp");
             }
-            if (webAppSourceDirectory.isDirectory()) {
-                resources.add(Resource.newResource(webAppSourceDirectory));
+            if (warSourceDirectory.isDirectory()) {
+                resources.add(Resource.newResource(warSourceDirectory));
             }
             Collections.reverse(resources);
             getLog().debug("Overlays:");
@@ -315,7 +315,7 @@ public class RunMojo extends AbstractJSZipMojo {
                     new ResourceCollection(resources.toArray(new Resource[resources.size()]));
 
             webAppContext = new JettyWebAppContext();
-            webAppContext.setWar(webAppSourceDirectory.getAbsolutePath());
+            webAppContext.setWar(warSourceDirectory.getAbsolutePath());
             webAppContext.setBaseResource(resourceCollection);
 
             WebAppClassLoader classLoader = new WebAppClassLoader(webAppContext);
@@ -445,8 +445,8 @@ public class RunMojo extends AbstractJSZipMojo {
                         for (Artifact a : getOverlayArtifacts(project, scope)) {
                             addOverlayResources(newReactorProjects, newResources, a);
                         }
-                        if (webAppSourceDirectory.isDirectory()) {
-                            newResources.add(Resource.newResource(webAppSourceDirectory));
+                        if (warSourceDirectory.isDirectory()) {
+                            newResources.add(Resource.newResource(warSourceDirectory));
                         }
                         Collections.reverse(newResources);
                         getLog().debug("New overlays:");
@@ -509,8 +509,8 @@ public class RunMojo extends AbstractJSZipMojo {
                         for (Artifact a : getOverlayArtifacts(project, scope)) {
                             addOverlayResources(reactorProjects, resources, a);
                         }
-                        if (webAppSourceDirectory.isDirectory()) {
-                            resources.add(Resource.newResource(webAppSourceDirectory));
+                        if (warSourceDirectory.isDirectory()) {
+                            resources.add(Resource.newResource(warSourceDirectory));
                         }
                         Collections.reverse(resources);
                         getLog().debug("Overlays:");

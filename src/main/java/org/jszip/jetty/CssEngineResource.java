@@ -3,6 +3,7 @@ package org.jszip.jetty;
 import org.codehaus.plexus.util.FileUtils;
 import org.eclipse.jetty.util.URIUtil;
 import org.eclipse.jetty.util.resource.Resource;
+import org.jruby.embed.EvalFailedException;
 import org.jszip.css.CssCompilationError;
 import org.jszip.css.CssEngine;
 import org.jszip.pseudo.io.PseudoFileSystem;
@@ -67,17 +68,15 @@ public class CssEngineResource extends Resource {
     public long length() {
         try {
             return engine.toCSS(sourceFilename).getBytes("utf-8").length;
-        } catch (UnsupportedEncodingException e) {
-            return 0;
-        } catch (CssCompilationError cssCompilationError) {
-            return 0;
+        } catch (Throwable t) {
+            return -1;
         }
     }
 
     @Override
     public URL getURL() {
         try {
-            return new URL("css-engine", null, -1, sourceFilename, CssEngineURLStreamHandler.INSTANCE);
+            return new URL("css-engine", null, -1, sourceFilename, new CssEngineURLStreamHandler());
         } catch (MalformedURLException e) {
             throw new IllegalStateException(
                     "MalformedURLException should not be thrown when a URLStreamHandler is provided");
@@ -122,7 +121,7 @@ public class CssEngineResource extends Resource {
 
     @Override
     public String[] list() {
-        return new String[0];
+        return null;
     }
 
     @Override
@@ -133,7 +132,46 @@ public class CssEngineResource extends Resource {
         if (path.length() == 0 || URIUtil.SLASH.equals(path)) {
             return this;
         }
+        if (name.equals(path) || (URIUtil.SLASH + name).equals(path)) {
+            return this;
+        }
         return new BadResource();
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
+
+        CssEngineResource that = (CssEngineResource) o;
+
+        if (!sourceFilename.equals(that.sourceFilename)) {
+            return false;
+        }
+        if (!fs.getPseudoFile(sourceFilename).equals(that.fs.getPseudoFile(sourceFilename))) {
+            return false;
+        }
+
+        return true;
+    }
+
+    @Override
+    public String toString() {
+        final StringBuilder sb = new StringBuilder();
+        sb.append("CssEngineResource");
+        sb.append("{sourceFilename='").append(sourceFilename).append('\'');
+        sb.append(", name='").append(name).append('\'');
+        sb.append('}');
+        return sb.toString();
+    }
+
+    @Override
+    public int hashCode() {
+        return sourceFilename.hashCode();
     }
 
     /**
@@ -141,18 +179,51 @@ public class CssEngineResource extends Resource {
      * {@link java.net.URLStreamHandler} otherwise Java will try to look up the protocol and fail thereby throwing the
      * dreaded {@link MalformedURLException}.
      */
-    private static class CssEngineURLStreamHandler extends URLStreamHandler {
-        /**
-         * The singleton instance.
-         */
-        private static final CssEngineURLStreamHandler INSTANCE = new CssEngineURLStreamHandler();
+    private class CssEngineURLStreamHandler extends URLStreamHandler {
 
         /**
          * {@inheritDoc}
          */
         @Override
         protected URLConnection openConnection(URL u) throws IOException {
-            throw new IOException("css-engine:" + u.getPath() + " is a CSS Engine URL");
+            try {
+                final byte[] content = CssEngineResource.this.engine.toCSS(sourceFilename).getBytes("utf-8");
+                return new URLConnection(u) {
+                    @Override
+                    public void connect() throws IOException {
+                        // no-op
+                    }
+
+                    @Override
+                    public InputStream getInputStream() throws IOException {
+                        return new ByteArrayInputStream(content);
+                    }
+
+                    @Override
+                    public int getContentLength() {
+                        return content.length;
+                    }
+
+                    @Override
+                    public String getContentEncoding() {
+                        return "utf-8";
+                    }
+
+                    @Override
+                    public String getContentType() {
+                        return "text/css";
+                    }
+
+                    @Override
+                    public long getLastModified() {
+                        return CssEngineResource.this.lastModified();
+                    }
+                };
+            } catch (CssCompilationError e) {
+                IOException ioe = new IOException(e.getMessage());
+                ioe.initCause(e);
+                throw ioe;
+            }
         }
     }
 

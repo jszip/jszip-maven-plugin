@@ -4,7 +4,9 @@ import org.codehaus.plexus.util.FileUtils;
 import org.jruby.embed.EmbedEvalUnit;
 import org.jruby.embed.ParseFailedException;
 import org.jruby.embed.ScriptingContainer;
+import org.jruby.exceptions.RaiseException;
 import org.jruby.javasupport.JavaEmbedUtils;
+import org.jszip.css.CssCompilationError;
 import org.jszip.css.CssEngine;
 import org.jszip.pseudo.io.PseudoFileSystem;
 
@@ -17,16 +19,17 @@ import java.io.IOException;
 public class SassEngine implements CssEngine {
 
     private final PseudoFileSystem fs;
-    private ScriptingContainer container;
-    private final EmbedEvalUnit evalUnit;
+    private final RubyProxy proxy;
+    private final PseudoFileSystemImporter fileSystemImporter;
+    private final ScriptingContainer container;
 
     public SassEngine(PseudoFileSystem fs, String encoding) throws IOException {
         this.fs = fs;
         this.container = new ScriptingContainer();
-        this.container.put("filesystem", new PseudoFileSystemImporter(fs, encoding));
-        this.container.put("filename", null);
+        fileSystemImporter = new PseudoFileSystemImporter(fs, encoding);
         try {
-            evalUnit = this.container.parse(getClass().getResourceAsStream("sass-engine.rb"), "sass-engine.rb");
+            Object reciever = this.container.runScriptlet(getClass().getResourceAsStream("sass-engine.rb"), "sass-engine.rb");
+            proxy = this.container.getInstance(reciever, RubyProxy.class);
         } catch (ParseFailedException e) {
             final IOException ioe = new IOException(e.getMessage());
             ioe.initCause(e);
@@ -39,8 +42,10 @@ public class SassEngine implements CssEngine {
     }
 
     public String toCSS(String name) {
-        container.put("filename", name);
-        return (String) JavaEmbedUtils.rubyToJava(evalUnit.run());
+        return proxy.toCSS(fileSystemImporter, name);
+    }
 
+    public static interface RubyProxy {
+        String toCSS(PseudoFileSystemImporter importer, String name);
     }
 }

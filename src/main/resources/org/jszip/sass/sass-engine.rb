@@ -95,9 +95,15 @@ module Sass
   end
 end
 
-options={
-    :importer => Sass::Importers::Proxy.new(filesystem),
-    :filename => filename,
-    :cache => false
-}
-options[:importer].find(filename,options).render
+class Adapter
+  def toCSS(filesystem,filename)
+    options={
+        :importer => Sass::Importers::Proxy.new(filesystem),
+        :filename => filename,
+        :cache => false
+    }
+    options[:importer].find(filename,options).render
+  end
+end
+
+Adapter.new

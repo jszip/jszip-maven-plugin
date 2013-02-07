@@ -63,6 +63,8 @@ import org.apache.maven.shared.invoker.InvocationRequest;
 import org.apache.maven.shared.invoker.Invoker;
 import org.apache.maven.shared.invoker.InvokerLogger;
 import org.apache.maven.shared.invoker.MavenInvocationException;
+import org.codehaus.plexus.util.FileUtils;
+import org.codehaus.plexus.util.IOUtil;
 import org.codehaus.plexus.util.StringUtils;
 import org.codehaus.plexus.util.dag.CycleDetectedException;
 import org.eclipse.jetty.server.Connector;
@@ -76,11 +78,18 @@ import org.eclipse.jetty.util.resource.Resource;
 import org.eclipse.jetty.util.resource.ResourceCollection;
 import org.eclipse.jetty.webapp.WebAppClassLoader;
 import org.eclipse.jetty.webapp.WebAppContext;
+import org.jszip.css.CssEngine;
+import org.jszip.jetty.CssEngineResource;
 import org.jszip.jetty.JettyWebAppContext;
 import org.jszip.jetty.SystemProperties;
 import org.jszip.jetty.SystemProperty;
 import org.jszip.jetty.VirtualDirectoryResource;
+import org.jszip.less.LessEngine;
+import org.jszip.pseudo.io.PseudoDirectoryScanner;
+import org.jszip.pseudo.io.PseudoFile;
+import org.jszip.pseudo.io.PseudoFileOutputStream;
 import org.jszip.pseudo.io.PseudoFileSystem;
+import org.jszip.sass.SassEngine;
 
 import java.io.File;
 import java.io.IOException;
@@ -213,6 +222,94 @@ public class RunMojo extends AbstractJSZipMojo {
     private MavenProject executedProject;
 
     /**
+     * Directory containing the less processor.
+     */
+    @Parameter(defaultValue = "src/build/js/less-rhino.js")
+    private File customLessScript;
+
+    /**
+     * Skip compilation.
+     */
+    @Parameter(property = "jszip.less.skip", defaultValue = "false")
+    private boolean lessSkip;
+
+    /**
+     * Force compilation even if the source LESS file is older than the destination CSS file.
+     */
+    @Parameter(property = "jszip.less.forceIfOlder", defaultValue = "false")
+    private boolean lessForceIfOlder;
+
+    /**
+     * Compress CSS.
+     */
+    @Parameter(property = "jszip.less.compress", defaultValue = "true")
+    private boolean lessCompress;
+
+    /**
+     * Indicates whether the build will continue even if there are compilation errors.
+     */
+    @Parameter(property = "jszip.less.failOnError", defaultValue = "true")
+    private boolean lessFailOnError;
+
+    /**
+     * Indicates whether to show extracts of the code where errors occur.
+     */
+    @Parameter(property = "jszip.less.showErrorExtracts", defaultValue = "false")
+    private boolean showErrorExtracts;
+
+    /**
+     * A list of &lt;include&gt; elements specifying the less files (by pattern) that should be included in
+     * processing.
+     */
+    @Parameter
+    private List<String> lessIncludes;
+
+    /**
+     * A list of &lt;exclude&gt; elements specifying the less files (by pattern) that should be excluded from
+     * processing.
+     */
+    @Parameter
+    private List<String> lessExcludes;
+
+    /**
+     * Skip compilation.
+     */
+    @Parameter(property = "jszip.sass.skip", defaultValue = "false")
+    private boolean sassSkip;
+
+    /**
+     * Force compilation even if the source Sass file is older than the destination CSS file.
+     */
+    @Parameter(property = "jszip.sass.forceIfOlder", defaultValue = "false")
+    private boolean sassForceIfOlder;
+
+    /**
+     * Indicates whether the build will continue even if there are compilation errors.
+     */
+    @Parameter(property = "jszip.sass.failOnError", defaultValue = "true")
+    private boolean sassFailOnError;
+
+    /**
+     * A list of &lt;include&gt; elements specifying the sass files (by pattern) that should be included in
+     * processing.
+     */
+    @Parameter
+    private List<String> sassIncludes;
+
+    /**
+     * A list of &lt;exclude&gt; elements specifying the sass files (by pattern) that should be excluded from
+     * processing.
+     */
+    @Parameter
+    private List<String> sassExcludes;
+
+    /**
+     * The character encoding scheme to be applied when reading SASS files.
+     */
+    @Parameter( defaultValue = "${project.build.sourceEncoding}" )
+    private String encoding;
+
+    /**
      * Used to resolve transitive dependencies.
      */
     @Component
@@ -297,6 +394,7 @@ public class RunMojo extends AbstractJSZipMojo {
         List<Resource> resources;
         try {
             resources = new ArrayList<Resource>();
+            addCssEngineResources(project, reactorProjects, mappings, resources);
             for (Artifact a : getOverlayArtifacts(project, scope)) {
                 addOverlayResources(reactorProjects, resources, a);
             }
@@ -443,6 +541,8 @@ public class RunMojo extends AbstractJSZipMojo {
                     getLog().debug("Comparing overlays paths of new and old models");
                     try {
                         List<Resource> newResources = new ArrayList<Resource>();
+                        // TODO newMappings
+                        addCssEngineResources(newProject, newReactorProjects, mappings, resources);
                         for (Artifact a : getOverlayArtifacts(project, scope)) {
                             addOverlayResources(newReactorProjects, newResources, a);
                         }
@@ -507,6 +607,7 @@ public class RunMojo extends AbstractJSZipMojo {
                     getLog().info("Updating overlays...");
                     try {
                         resources = new ArrayList<Resource>();
+                        addCssEngineResources(project, reactorProjects, mappings, resources);
                         for (Artifact a : getOverlayArtifacts(project, scope)) {
                             addOverlayResources(reactorProjects, resources, a);
                         }
@@ -619,8 +720,8 @@ public class RunMojo extends AbstractJSZipMojo {
         }
     }
 
-    private void addCssEngineResources(MavenProject project, List<MavenProject> reactorProjects, Mapping[] mappings)
-            throws MojoExecutionException {
+    private void addCssEngineResources(MavenProject project, List<MavenProject> reactorProjects, Mapping[] mappings, List<Resource> _resources)
+            throws MojoExecutionException, IOException {
         List<PseudoFileSystem.Layer> layers = new ArrayList<PseudoFileSystem.Layer>();
         layers.add(new PseudoFileSystem.FileLayer("/virtual", warSourceDirectory));
         FilterArtifacts filter = new FilterArtifacts();
@@ -697,6 +798,67 @@ public class RunMojo extends AbstractJSZipMojo {
             }
         }
 
+        final PseudoFileSystem fs = new PseudoFileSystem(layers);
+
+        CssEngine engine = new LessEngine(fs, encoding == null ? "utf-8" : encoding, getLog(), lessCompress, customLessScript, showErrorExtracts);
+
+        // look for files to compile
+
+        PseudoDirectoryScanner scanner = new PseudoDirectoryScanner();
+
+        scanner.setFileSystem(fs);
+
+        scanner.setBasedir(fs.getPseudoFile("/virtual"));
+
+        if (lessIncludes != null && !lessIncludes.isEmpty()) {
+            scanner.setIncludes(processIncludesExcludes(lessIncludes));
+        } else {
+            scanner.setIncludes(new String[]{"**/*.less"});
+        }
+
+        if (lessExcludes != null && !lessExcludes.isEmpty()) {
+            scanner.setExcludes(processIncludesExcludes(lessExcludes));
+        } else {
+            scanner.setExcludes(new String[0]);
+        }
+
+        scanner.scan();
+
+        for (String fileName : new ArrayList<String>(Arrays.asList(scanner.getIncludedFiles()))) {
+            final CssEngineResource child = new CssEngineResource(fs, engine, "/virtual/" + fileName);
+            final String path = FileUtils.dirname(fileName);
+            if (StringUtils.isBlank(path)) {
+                _resources.add(new VirtualDirectoryResource(new VirtualDirectoryResource(child, child.getName()), ""));
+            } else {
+                _resources.add(new VirtualDirectoryResource(new VirtualDirectoryResource(child, child.getName()), path));
+            }
+        }
+
+        engine = new SassEngine(fs, encoding == null ? "utf-8" : encoding);
+
+        if (sassIncludes != null && !sassIncludes.isEmpty()) {
+            scanner.setIncludes(processIncludesExcludes(sassIncludes));
+        } else {
+            scanner.setIncludes(new String[]{"**/*.sass","**/*.scss"});
+        }
+
+        if (sassExcludes != null && !sassExcludes.isEmpty()) {
+            scanner.setExcludes(processIncludesExcludes(sassExcludes));
+        } else {
+            scanner.setExcludes(new String[]{"**/_*.sass","**/_*.scss"});
+        }
+
+        scanner.scan();
+
+        for (String fileName : new ArrayList<String>(Arrays.asList(scanner.getIncludedFiles()))) {
+            final CssEngineResource child = new CssEngineResource(fs, engine, "/virtual/" + fileName);
+            final String path = FileUtils.dirname(fileName);
+            if (StringUtils.isBlank(path)) {
+                _resources.add(new VirtualDirectoryResource(new VirtualDirectoryResource(child, child.getName()), ""));
+            } else {
+                _resources.add(new VirtualDirectoryResource(new VirtualDirectoryResource(child, child.getName()), path));
+            }
+        }
 
     }
 

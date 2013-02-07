@@ -168,7 +168,7 @@ public class VirtualDirectoryResource extends Resource {
     /** {@inheritDoc} */
     @Override
     public String[] list() {
-        return new String[]{name + "/"};
+        return new String[]{child.isDirectory() ? name + "/" : name};
     }
 
     /** {@inheritDoc} */

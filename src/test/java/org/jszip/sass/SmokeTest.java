@@ -38,19 +38,6 @@ public class SmokeTest {
     }
 
     @Test
-    public void smokes() throws IOException {
-        ScriptingContainer container = new ScriptingContainer();
-        final Ruby runtime = container.getProvider().getRuntime();
-        final PseudoFileSystem fs = new PseudoFileSystem(new PseudoFileSystem.FileLayer(folder.getRoot()));
-        FileUtils.fileWrite(new File(folder.getRoot(), "foo.scss"), "utf-8", loadResource("foo.scss"));
-        FileUtils.fileWrite(new File(folder.getRoot(), "bar.sass"), "utf-8", loadResource("bar.sass"));
-        container.put("filesystem", new PseudoFileSystemImporter(fs, "utf-8"));
-        container.put("filename", "/foo.scss");
-        final EmbedEvalUnit evalUnit = container.parse(getClass().getResourceAsStream("sass-engine.rb"), "sass-engine.rb");
-        assertThat(JavaEmbedUtils.rubyToJava(evalUnit.run()).toString(), containsString("8px"));
-    }
-
-    @Test
     public void engine() throws IOException {
         final PseudoFileSystem fs = new PseudoFileSystem(new PseudoFileSystem.FileLayer(folder.getRoot()));
         FileUtils.fileWrite(new File(folder.getRoot(), "foo.scss"), "utf-8", loadResource("foo.scss"));

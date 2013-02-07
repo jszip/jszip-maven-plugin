@@ -69,12 +69,9 @@
 
     <!-- SASS gem -->
     <dependency>
-      <groupId>org.jszip.jruby</groupId>
-      <artifactId>sass-gems</artifactId>
+      <groupId>org.jszip.gems</groupId>
+      <artifactId>sass-lang</artifactId>
       <version>3.2.5</version>
-      <!--<groupId>com.sass-lang</groupId>-->
-      <!--<artifactId>sass-gems</artifactId>-->
-      <!--<version>3.1.1</version>-->
     </dependency>
 
     <!-- javascript engine -->

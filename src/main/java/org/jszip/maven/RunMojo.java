@@ -157,6 +157,11 @@ public class RunMojo extends AbstractJSZipMojo {
     @Parameter(defaultValue = "${basedir}/src/main/webapp", required = true)
     private File warSourceDirectory = null;
 
+    /**
+     * The directory where the webapp is built.
+     */
+    @Parameter(defaultValue = "${project.build.directory}/${project.build.finalName}", required = true)
+    private File webappDirectory;
 
     /**
      * List of connectors to use. If none are configured
@@ -825,7 +830,8 @@ public class RunMojo extends AbstractJSZipMojo {
         scanner.scan();
 
         for (String fileName : new ArrayList<String>(Arrays.asList(scanner.getIncludedFiles()))) {
-            final CssEngineResource child = new CssEngineResource(fs, engine, "/virtual/" + fileName);
+            final CssEngineResource child = new CssEngineResource(fs, engine, "/virtual/" + fileName,
+                    new File(webappDirectory, engine.mapName(fileName)));
             final String path = FileUtils.dirname(fileName);
             if (StringUtils.isBlank(path)) {
                 _resources.add(new VirtualDirectoryResource(new VirtualDirectoryResource(child, child.getName()), ""));
@@ -851,7 +857,8 @@ public class RunMojo extends AbstractJSZipMojo {
         scanner.scan();
 
         for (String fileName : new ArrayList<String>(Arrays.asList(scanner.getIncludedFiles()))) {
-            final CssEngineResource child = new CssEngineResource(fs, engine, "/virtual/" + fileName);
+            final CssEngineResource child = new CssEngineResource(fs, engine, "/virtual/" + fileName,
+                    new File(webappDirectory, engine.mapName(fileName)));
             final String path = FileUtils.dirname(fileName);
             if (StringUtils.isBlank(path)) {
                 _resources.add(new VirtualDirectoryResource(new VirtualDirectoryResource(child, child.getName()), ""));

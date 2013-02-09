@@ -3,17 +3,17 @@ package org.jszip.jetty;
 import org.codehaus.plexus.util.FileUtils;
 import org.eclipse.jetty.util.URIUtil;
 import org.eclipse.jetty.util.resource.Resource;
-import org.jruby.embed.EvalFailedException;
 import org.jszip.css.CssCompilationError;
 import org.jszip.css.CssEngine;
+import org.jszip.pseudo.io.PseudoFile;
 import org.jszip.pseudo.io.PseudoFileSystem;
 
 import java.io.ByteArrayInputStream;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.io.UnsupportedEncodingException;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLConnection;
@@ -33,11 +33,36 @@ public class CssEngineResource extends Resource {
 
     private final String name;
 
+    private final File targetFile;
+
     public CssEngineResource(PseudoFileSystem fs, CssEngine engine, String sourceFilename) {
+        this(fs, engine, sourceFilename, null);
+    }
+
+    public CssEngineResource(PseudoFileSystem fs, CssEngine engine, String sourceFilename, File targetFile) {
         this.fs = fs;
         this.engine = engine;
         this.sourceFilename = sourceFilename;
         this.name = FileUtils.filename(engine.mapName(sourceFilename));
+        this.targetFile = targetFile;
+    }
+
+    private void refresh() {
+        if (targetFile != null) {
+            PseudoFile sourceFile = fs.getPseudoFile(sourceFilename);
+            if (!sourceFile.exists()) {
+                targetFile.delete();
+            } else if (sourceFile.isFile() && (!targetFile.exists() || targetFile.lastModified() < sourceFile
+                    .lastModified())) {
+                try {
+                    FileUtils.fileWrite(targetFile, "utf-8", engine.toCSS(sourceFilename));
+                } catch (IOException e) {
+                    targetFile.delete();
+                } catch (CssCompilationError cssCompilationError) {
+                    targetFile.delete();
+                }
+            }
+        }
     }
 
     @Override
@@ -66,6 +91,10 @@ public class CssEngineResource extends Resource {
 
     @Override
     public long length() {
+        refresh();
+        if (targetFile != null && targetFile.exists()) {
+            return targetFile.length();
+        }
         try {
             return engine.toCSS(sourceFilename).getBytes("utf-8").length;
         } catch (Throwable t) {
@@ -75,6 +104,15 @@ public class CssEngineResource extends Resource {
 
     @Override
     public URL getURL() {
+        refresh();
+        if (targetFile != null && targetFile.exists()) {
+            try {
+                return new URL("css-engine", null, -1, targetFile.getAbsolutePath(), new CssEngineURLStreamHandler());
+            } catch (MalformedURLException e) {
+                throw new IllegalStateException(
+                        "MalformedURLException should not be thrown when a URLStreamHandler is provided");
+            }
+        }
         try {
             return new URL("css-engine", null, -1, sourceFilename, new CssEngineURLStreamHandler());
         } catch (MalformedURLException e) {
@@ -85,7 +123,8 @@ public class CssEngineResource extends Resource {
 
     @Override
     public File getFile() throws IOException {
-        return null;
+        refresh();
+        return targetFile;
     }
 
     @Override
@@ -95,6 +134,8 @@ public class CssEngineResource extends Resource {
 
     @Override
     public InputStream getInputStream() throws IOException {
+        refresh();
+        if (targetFile != null && targetFile.exists()) return new FileInputStream(targetFile);
         try {
             return new ByteArrayInputStream(engine.toCSS(sourceFilename).getBytes("utf-8"));
         } catch (CssCompilationError e) {

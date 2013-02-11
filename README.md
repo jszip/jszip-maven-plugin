@@ -14,17 +14,36 @@ The plugin documentation can be found at http://jszip.org/jszip-maven-plugin
 FAQ's
 -----
 
-Q: When building, how do I define where my dependencies are mapped to?
+#####Q: When building, how do I define where my dependencies are mapped to?#####
 
 A: The http://jszip.org/jszip-maven-plugin/unpack-mojo.html#mappings allows users to map individual dependencies whithin the Webapp.
-Example: https://gist.github.com/4697135
 
-Q: When mapping individual dependencies, do I have to map them all one by one?
+__Example:__
+```xml
+<mappings>
+  <mapping>
+    <select>groupId:artifactId</select>
+    <path>path/relative/to/webapp/root</path>
+  </mapping>
+</mappings>
+```
+
+#####Q: When mapping individual dependencies, do I have to map them all one by one?#####
 
 
-A: No, you can use * to indicate wildcard matching and the groupId (as seen in the previouse question) is optional, if yu don't specify it the assumption is *
-The following example maps all dependencies whith the goup Id 'org.jszop.redist:*' to 'scripts/libs'.
-Example: https://gist.github.com/4697166
+A: No, you can use __'*'__ to indicate a wildcard matching and the _groupId_ (as seen in the previouse question) is optional, if you don't specify it, the assumption is __'*'__.
+
+__Example:__
+
+Maps all dependencies whith the _goupId_ __'org.jszop.redist'__ to __'scripts/libs'__.
+```xml
+<mapping>
+  <mapping>
+    <select>org.jszop.redist:*</select>
+    <path>scripts/libs</path>
+  </mapping>
+</mapping>
+```
 
 Licensing
 ---------

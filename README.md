@@ -35,7 +35,7 @@ A: No, you can use __'*'__ to indicate a wildcard matching and the _groupId_ (as
 
 __Example:__
 
-Maps all dependencies whith the _goupId_ 'org.jszop.redist:*' to 'scripts/libs'.
+Maps all dependencies whith the _goupId_ __'org.jszop.redist'__ to __'scripts/libs'__.
 ```xml
 <mapping>
   <mapping>

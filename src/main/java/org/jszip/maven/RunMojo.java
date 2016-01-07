@@ -980,7 +980,7 @@ public class RunMojo extends AbstractJSZipMojo {
 
         List<MavenProject> projects = new ArrayList<MavenProject>();
         for (MavenProject p : reactorProjects) {
-            ProjectBuildingRequest request = new DefaultProjectBuildingRequest();
+            ProjectBuildingRequest request = ProjectBuildingRequestCreator.create(session);
 
             request.setProcessPlugins(true);
             request.setProfiles(request.getProfiles());
@@ -991,7 +991,6 @@ public class RunMojo extends AbstractJSZipMojo {
             request.setUserProperties(session.getUserProperties());
             request.setRemoteRepositories(session.getRequest().getRemoteRepositories());
             request.setPluginArtifactRepositories(session.getRequest().getPluginArtifactRepositories());
-            request.setRepositorySession(session.getRepositorySession());
             request.setLocalRepository(localRepository);
             request.setBuildStartTime(session.getRequest().getStartTime());
             request.setResolveDependencies(true);
